@@ -1,0 +1,9 @@
+# Vim backup/swap files
+*.swp
+*.un~
+
+# YouCompleteMe
+compile_commands.json
+
+# Build directory
+build/
