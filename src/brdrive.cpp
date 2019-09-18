@@ -6,6 +6,8 @@
 #include <window/geometry.h>
 #include <window/color.h>
 #include <window/window.h>
+#include <x11/x11.h>
+#include <x11/connection.h>
 #include <x11/window.h>
 #include <x11/event.h>
 
@@ -16,6 +18,8 @@
 
 int main(int argc, char *argv[])
 {
+  brdrive::x11_init();
+
   brdrive::X11Window window;
 
   window
@@ -24,7 +28,7 @@ int main(int argc, char *argv[])
     .create()
     .show();
 
-  auto c = (xcb_connection_t *)window.xcbConnection();
+  auto c = brdrive::x11().connection<xcb_connection_t>();
 
   bool running = true;
   while(auto ev = xcb_wait_for_event(c)) {
@@ -61,6 +65,8 @@ int main(int argc, char *argv[])
 
     if(!running) break;
   }
+
+  brdrive::x11_finalize();
 
   return 0;
 }

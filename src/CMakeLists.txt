@@ -8,6 +8,7 @@ target_sources (BrunerDrive PRIVATE
 
   # X11 specific sources
   ${SrcDir}/x11/x11.cpp
+  ${SrcDir}/x11/connection.cpp
   ${SrcDir}/x11/window.cpp
   ${SrcDir}/x11/event.cpp
 )

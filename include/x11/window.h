@@ -1,5 +1,6 @@
 #pragma once
 
+#include <x11/x11.h>
 #include <window/window.h>
 
 #include <exception>
@@ -23,8 +24,6 @@ public:
 
   virtual auto create() -> IWindow&;
   virtual auto show() -> IWindow&;
-
-  auto xcbConnection() -> void *;
 
 private:
   pX11Window *p;
