@@ -37,9 +37,19 @@ int main(int argc, char *argv[])
       free(ev);
       break;
 
-    default: {
+    case XCB_KEY_PRESS:
+    case XCB_KEY_RELEASE: {
       auto event = brdrive::X11KeyEvent(ev);
-      //printf("event! %d\n", event.type());
+      auto key_press = (xcb_key_press_event_t *)ev;
+
+      auto keysym = brdrive::x11().keycodeToKeysym(key_press->detail);
+
+      printf("key_press->detail=(0x%2X %3u, %c) keysym=(0x%2X %3u, %c)\n",
+          key_press->detail, key_press->detail, key_press->detail,
+          keysym, keysym, keysym);
+
+      if(keysym == 'q') running = false;
+      break;
     }
       /*
     case XCB_EXPOSE:

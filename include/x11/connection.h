@@ -10,6 +10,7 @@ namespace brdrive {
 using X11ConnectionHandle = void /* xcb_connection_t */ *;
 using X11SetupHandle      = const void /* xcb_setup_t */ *;
 using X11ScreenHandle     = void /* xcb_screen_t */ *;
+using X11KeyCode          = u8;
 
 // PIMPL struct
 struct pX11Connection;
@@ -61,6 +62,8 @@ public:
 
   // Calls xcb_flush(connection())
   auto flush() -> X11Connection&;
+
+  auto keycodeToKeysym(X11KeyCode keycode) -> u32;
 
 private:
   pX11Connection *p;

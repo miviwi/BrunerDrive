@@ -16,9 +16,9 @@ struct pX11Connection {
   const xcb_setup_t *setup;
   xcb_screen_t *screen;
 
-  std::unordered_map<xcb_button_t, int> keycode_to_keysym;
+  std::unordered_map<xcb_keycode_t, u32> keycode_to_keysym;
 
-  auto keycodeToKeysym(xcb_button_t keycode) const -> int
+  auto keycodeToKeysym(xcb_keycode_t keycode) const -> int
   {
     return keycode_to_keysym.at(keycode);
   }
@@ -46,7 +46,7 @@ auto pX11Connection::initKbmap() -> bool
 {
   auto kbmap_cookie = xcb_get_keyboard_mapping(
       connection,
-      setup->min_keycode, setup->max_keycode+setup->min_keycode + 1
+      setup->min_keycode, setup->max_keycode-setup->min_keycode + 1
   );
   auto kbmap = xcb_get_keyboard_mapping_reply(
       connection, kbmap_cookie, nullptr
@@ -125,6 +125,13 @@ auto X11Connection::flush() -> X11Connection&
   xcb_flush(p->connection);
 
   return *this;
+}
+
+auto X11Connection::keycodeToKeysym(X11KeyCode keycode) -> u32
+{
+  assert(p && "must be called AFTER connect()!");
+
+  return p->keycodeToKeysym(keycode);
 }
 
 }
