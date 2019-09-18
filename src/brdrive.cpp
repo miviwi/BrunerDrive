@@ -1,29 +1,66 @@
 #include <cstdio>
+#include <cstdlib>
 
 #include <brdrive.h>
+#include <types.h>
+#include <window/geometry.h>
+#include <window/color.h>
+#include <window/window.h>
+#include <x11/window.h>
+#include <x11/event.h>
 
-#include <util/primitive.h>
+#include <xcb/xcb.h>
+#include <X11/keysymdef.h>
+
+#include <unordered_map>
 
 int main(int argc, char *argv[])
 {
-  printf(
-      "Project: %s\n"
-      "Author:  %s\n"
-      "Version: %s\n"
-      "\n"
-      "BRDRIVE_ABI_VERSION: %.6llx\n\n",
-      brdrive::Project, brdrive::Author, brdrive::Version, BRDRIVE_ABI_VERSION);
+  brdrive::X11Window window;
 
-  brdrive::i14 i14(0x3FFE);
+  window
+    .geometry({ 0, 0, 640, 480 })
+    .background(brdrive::Color(1.0f, 0.0f, 1.0f, 0.0f))
+    .create()
+    .show();
 
-  brdrive::i9 slice = i14(5, 13);
+  auto c = (xcb_connection_t *)window.xcbConnection();
 
-  printf("i14::Mask=0x%.4llx i14::Sign=0x%.4llx\n"
-      "sizeof(i14::StorageType)=%d\n"
-      "\n"
-      "i14={0x%.4x, %d} i14(5, 13) as i9=(0x%.4x, %d) i14.byte(1)=0x%.2x i14(12)=0x%x\n",
-      brdrive::Integer<14>::Mask, brdrive::Integer<14>::Sign, sizeof(brdrive::Integer<14>::StorageType),
-      i14.get(), i14.get(), slice.get(), slice.get(), (int)i14.byte(1), (int)i14(12));
+  bool running = true;
+  while(auto ev = xcb_wait_for_event(c)) {
+    switch(ev->response_type & ~0x80) {
+    case XCB_EXPOSE: 
+      free(ev);
+      break;
+
+    default: {
+      auto event = brdrive::X11KeyEvent(ev);
+      //printf("event! %d\n", event.type());
+    }
+      /*
+    case XCB_EXPOSE:
+      xcb_poly_fill_rectangle(c, win, fg, 1, rectangles);
+      xcb_image_text_8(c, sizeof(brdrive::Project)-1, win, bg, 45, 55, brdrive::Project);
+      xcb_flush(c);
+      break;
+      */
+
+      /*
+    case XCB_KEY_PRESS: {
+      auto key_press = (xcb_button_press_event_t *)ev;
+      auto keysym = keycode_to_keysym.at(key_press->detail);
+      printf("key_press->detail=(0x%2X %3u, %c) keysym=(0x%2X %3u, %c)\n",
+          key_press->detail, key_press->detail, key_press->detail,
+          keysym, keysym, keysym);
+
+      if(keysym == 'q') running = false;
+      break;
+    }
+    */
+    }
+
+    if(!running) break;
+  }
 
   return 0;
 }

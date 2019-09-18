@@ -5,10 +5,13 @@ set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project (BrunerDrive)
 add_executable (BrunerDrive)
 
+find_package (X11 REQUIRED)
+
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "-std=c++17 -g")
 
 target_include_directories (BrunerDrive PUBLIC ./include)
+target_link_libraries (BrunerDrive PRIVATE xcb X11-xcb ${X11_LIBRARIES})
 
 add_subdirectory (./src)
 

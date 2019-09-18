@@ -333,4 +333,9 @@ private:
   unsigned shift_;
 };
 
+static inline auto bswap_u32(u32 v) -> u32
+{
+  return __builtin_bswap32(v);
+}
+
 }

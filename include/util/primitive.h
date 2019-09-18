@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cassert>
+
+#include <numeric>
+
 #include <util/natural.h>
 #include <util/integer.h>
 
@@ -28,6 +32,14 @@ template <size_t NumBits>
 auto Integer<NumBits>::toNatural() const -> Natural<NumBits>
 {
   return Integer<NumBits>(*this);
+}
+
+static inline u8 operator"" _u8(unsigned long long v)
+{
+  assert(v <= std::numeric_limits<u8>::max() &&
+      "the value suppiled to '_u8' is outside the range of a byte! (> 255)");
+
+  return (u8)v;
 }
 
 }
