@@ -11,6 +11,10 @@
 namespace brdrive {
 
 struct pX11Window {
+  xcb_connection_t *connection;
+  const xcb_setup_t *setup;
+  xcb_screen_t *screen;
+
   xcb_drawable_t window;
   xcb_gcontext_t bg;
 
@@ -24,7 +28,11 @@ private:
 
 auto pX11Window::init(const Geometry& geom, const Color& bg_color) -> bool
 {
-  window = x11().screen<xcb_screen_t>()->root;
+  connection = x11().connection<xcb_connection_t>();
+  setup = x11().setup<xcb_setup_t>();
+  screen = x11().screen<xcb_screen_t>();
+
+  window = screen->root;
   if(!createWindow(geom, bg_color)) return false;
 
   return true;
@@ -35,15 +43,13 @@ auto pX11Window::createBg(const Color& bg_color) -> bool
   bg = x11().genId();
   u32 mask = XCB_GC_BACKGROUND;
   u32 arg  = bg_color.bgra();
-  xcb_create_gc(x11().connection<xcb_connection_t>(), bg, window, mask, &arg);
+  xcb_create_gc(connection, bg, window, mask, &arg);
 
   return true;
 }
 
 auto pX11Window::createWindow(const Geometry& geom, const Color& bg_color) -> bool
 {
-  auto screen = x11().screen<xcb_screen_t>();
-
   window = x11().genId();
   u32 mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
   u32 args[] = {
@@ -54,7 +60,7 @@ auto pX11Window::createWindow(const Geometry& geom, const Color& bg_color) -> bo
     | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE,
   };
   xcb_create_window(
-      x11().connection<xcb_connection_t>(),
+      connection,
       screen->root_depth, window, screen->root, geom.x, geom.y, geom.w, geom.h, 0,
       XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, mask, args
   );
@@ -87,7 +93,7 @@ auto X11Window::show() -> IWindow&
 {
   assert(p && "can only be called after create()!");
 
-  xcb_map_window(x11().connection<xcb_connection_t>(), p->window);
+  xcb_map_window(p->connection, p->window);
   x11().flush();
 
   return *this;
