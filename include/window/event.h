@@ -41,6 +41,7 @@ protected:
 class IKeyEvent : public Event {
 public:
   IKeyEvent(Type type);
+  virtual ~IKeyEvent();
 
 protected:
 };
@@ -48,6 +49,7 @@ protected:
 class IMouseEvent : public Event {
 public:
   IMouseEvent(Type type);
+  virtual ~IMouseEvent();
 
 protected:
 };

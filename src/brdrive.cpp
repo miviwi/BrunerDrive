@@ -57,12 +57,15 @@ int main(int argc, char *argv[])
 
       printf("click! @ (%hd, %hd)\n", button_press->event_x, button_press->event_y);
 
+      window.drawString("hello, world!",
+          brdrive::Geometry::xy(button_press->event_x, button_press->event_y), brdrive::Color::white()); 
+
       break;
     }
       
     }
 
-    if(!running) break;
+    //if(!running) break;
   }
 
   brdrive::x11_finalize();

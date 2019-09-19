@@ -42,4 +42,12 @@ static inline u8 operator"" _u8(unsigned long long v)
   return (u8)v;
 }
 
+static inline u16 operator"" _u16(unsigned long long v)
+{
+  assert(v <= std::numeric_limits<u16>::max() &&
+      "the value suppiled to '_u16' is outside the range of a half-word! (> 65535)");
+
+  return (u16)v;
+}
+
 }

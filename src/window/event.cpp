@@ -24,8 +24,16 @@ IKeyEvent::IKeyEvent(Type type) :
 {
 }
 
+IKeyEvent::~IKeyEvent()
+{
+}
+
 IMouseEvent::IMouseEvent(Type type) :
   Event(type)
+{
+}
+
+IMouseEvent::~IMouseEvent()
 {
 }
 

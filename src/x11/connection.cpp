@@ -18,6 +18,8 @@ struct pX11Connection {
 
   std::unordered_map<xcb_keycode_t, u32> keycode_to_keysym;
 
+  ~pX11Connection();
+
   auto keycodeToKeysym(xcb_keycode_t keycode) const -> int
   {
     return keycode_to_keysym.at(keycode);
@@ -27,6 +29,11 @@ struct pX11Connection {
 
   auto initKbmap() -> bool;
 };
+
+pX11Connection::~pX11Connection()
+{
+  xcb_disconnect(connection);
+}
 
 auto pX11Connection::connect() -> bool
 {

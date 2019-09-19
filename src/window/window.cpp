@@ -8,6 +8,7 @@ IWindow::IWindow() :
 }
 
 IWindow::~IWindow()
+
 {
 }
 
