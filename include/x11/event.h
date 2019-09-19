@@ -11,7 +11,7 @@ namespace brdrive {
 using X11ResponseType = u8;
 using X11EventHandle  = void /* xcb_generic_event_t */ *;
 
-class X11Event {
+class X11Event : public Event {
 public:
   X11Event(const X11Event&) = delete;
   virtual ~X11Event();
@@ -37,7 +37,7 @@ public:
 private:
   friend X11Event;
 
-  X11KeyEvent(X11EventHandle ev, Event::Type type);
+  X11KeyEvent(X11EventHandle ev);
 
   u32 keycode_;
   u32 keysym_;
@@ -53,7 +53,7 @@ public:
 private:
   friend X11Event;
 
-  X11MouseEvent(X11EventHandle ev, Event::Type type);
+  X11MouseEvent(X11EventHandle ev);
 
   Vec2<i16> point_;
   Vec2<i16> delta_;

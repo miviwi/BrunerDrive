@@ -17,6 +17,7 @@ static inline auto xcb_ev(X11EventHandle ev) -> const T*
 }
 
 X11Event::X11Event(X11EventHandle ev) :
+  Event(type_from_handle(ev)),
   event_(ev)
 {
 }
@@ -28,6 +29,9 @@ X11Event::~X11Event()
 
 auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
 {
+  // Check if 'ev' is a valid handle
+  if(!ev) return Event::Ptr();
+
   auto event = Event::Ptr();
   auto event_type = type_from_handle(ev);
 
@@ -38,13 +42,13 @@ auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
   switch(event_type) {
   case Event::KeyUp:
   case Event::KeyDown:
-    event.reset(new X11KeyEvent(ev, event_type));
+    event.reset(new X11KeyEvent(ev));
     break;
     
   case Event::MouseMove:
   case Event::MouseDown:
   case Event::MouseUp:
-    event.reset(new X11MouseEvent(ev, event_type));
+    event.reset(new X11MouseEvent(ev));
     break;
   }
 
@@ -75,11 +79,11 @@ auto X11Event::type_from_handle(X11EventHandle ev) -> Event::Type
   return Event::Invalid;
 }
 
-X11KeyEvent::X11KeyEvent(X11EventHandle ev, Event::Type type) :
-  X11Event(ev), IKeyEvent(type),
+X11KeyEvent::X11KeyEvent(X11EventHandle ev) :
+  X11Event(ev),
   keycode_(Key::Invalid), keysym_(Key::Invalid)
 {
-  switch(type) {
+  switch(type()) {
   case Event::KeyDown: {
     auto key_press = xcb_ev<xcb_key_press_event_t>(ev);
 
@@ -114,11 +118,11 @@ auto X11KeyEvent::sym() -> u32
   return keysym_;
 }
 
-X11MouseEvent::X11MouseEvent(X11EventHandle ev, Event::Type type) :
-  X11Event(ev), IMouseEvent(type),
+X11MouseEvent::X11MouseEvent(X11EventHandle ev) :
+  X11Event(ev),
   point_(Vec2<i16>::zero()), delta_(Vec2<i16>::zero())
 {
-  switch(type) {
+  switch(type()) {
   case Event::MouseMove: {
     auto mouse_move = xcb_ev<xcb_motion_notify_event_t>(ev);
 
@@ -189,7 +193,12 @@ auto X11EventLoop::waitEvent() -> Event::Ptr
   if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
 
   // ...and if it does we'll wait some more for a valid one
-  return waitEvent();
+  ev = xcb_wait_for_event(x11().connection<xcb_connection_t>());
+  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+
+  // If the event is invalid the SECOND time that means the
+  //   application was closed and we should post a QuitEvent
+  return QuitEvent::alloc();
 }
 
 }

@@ -81,17 +81,12 @@ auto Event::type() const -> Type
   return type_;
 }
 
-IKeyEvent::IKeyEvent(Type type) :
-  Event(type)
+QuitEvent::QuitEvent() :
+  Event(Quit)
 {
 }
 
 IKeyEvent::~IKeyEvent()
-{
-}
-
-IMouseEvent::IMouseEvent(Type type) :
-  Event(type)
 {
 }
 

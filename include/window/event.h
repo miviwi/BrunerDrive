@@ -16,6 +16,7 @@ class Event {
 public:
   enum Type {
     Invalid,
+    Quit,
     KeyDown, KeyUp,
     MouseMove, MouseDown, MouseUp,
   };
@@ -52,9 +53,15 @@ struct Key {
   };
 };
 
-class IKeyEvent : public Event {
+class QuitEvent : public Event {
 public:
-  IKeyEvent(Type type);
+  QuitEvent();
+
+  static auto alloc() -> Event::Ptr { return Event::Ptr(new QuitEvent()); }
+};
+
+class IKeyEvent {
+public:
   virtual ~IKeyEvent();
 
   // Returns the keyboard scancode 
@@ -74,9 +81,8 @@ public:
 protected:
 };
 
-class IMouseEvent : public Event {
+class IMouseEvent {
 public:
-  IMouseEvent(Type type);
   virtual ~IMouseEvent();
 
   virtual auto point() -> Vec2<i16> = 0;

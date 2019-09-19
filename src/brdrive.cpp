@@ -61,6 +61,10 @@ int main(int argc, char *argv[])
 
       break;
     }
+
+    case brdrive::Event::Quit:
+      running = false;
+      break;
     }
 
     if(!running) break;
