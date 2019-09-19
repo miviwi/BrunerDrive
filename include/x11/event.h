@@ -35,4 +35,14 @@ private:
   X11KeyEvent(X11EventHandle ev, Event::Type type);
 };
 
+class X11MouseEvent : public X11Event, public IMouseEvent {
+public:
+  virtual ~X11MouseEvent();
+
+private:
+  friend X11Event;
+
+  X11MouseEvent(X11EventHandle ev, Event::Type type);
+};
+
 }

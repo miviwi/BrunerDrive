@@ -45,4 +45,11 @@ public:
 protected:
 };
 
+class IMouseEvent : public Event {
+public:
+  IMouseEvent(Type type);
+
+protected:
+};
+
 }

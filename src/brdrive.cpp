@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
       continue;
     }
 
-    switch(((brdrive::IKeyEvent *)event.get())->type()) {
+    switch(event->type()) {
     case brdrive::Event::KeyUp: {
       auto key_press = (xcb_key_press_event_t *)ev;
 
@@ -51,6 +51,15 @@ int main(int argc, char *argv[])
       if(keysym == 'q') running = false;
       break;
     }
+
+    case brdrive::Event::MouseDown: {
+      auto button_press = (xcb_button_press_event_t *)ev;
+
+      printf("click! @ (%hd, %hd)\n", button_press->event_x, button_press->event_y);
+
+      break;
+    }
+      
     }
 
     if(!running) break;

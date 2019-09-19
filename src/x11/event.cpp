@@ -30,10 +30,20 @@ auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
   auto event = Event::Ptr();
   auto event_type = type_from_handle(ev);
 
+  // Event::Invalid signals that an event which should be squashed
+  //   (e.g. XCB_EXPOSE) has occured, so return a nullptr in that case
+  if(event_type == Event::Invalid) return Event::Ptr();
+
   switch(event_type) {
   case Event::KeyUp:
   case Event::KeyDown:
     event.reset(new X11KeyEvent(ev, event_type));
+    break;
+    
+  case Event::MouseMove:
+  case Event::MouseDown:
+  case Event::MouseUp:
+    event.reset(new X11MouseEvent(ev, event_type));
     break;
   }
 
@@ -70,6 +80,15 @@ X11KeyEvent::X11KeyEvent(X11EventHandle ev, Event::Type type) :
 }
 
 X11KeyEvent::~X11KeyEvent()
+{
+}
+
+X11MouseEvent::X11MouseEvent(X11EventHandle ev, Event::Type type) :
+  X11Event(ev), IMouseEvent(type)
+{
+}
+
+X11MouseEvent::~X11MouseEvent()
 {
 }
 
