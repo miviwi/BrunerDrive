@@ -2,6 +2,8 @@
 
 #include <types.h>
 
+#include <memory>
+
 namespace brdrive {
 
 class Event;
@@ -21,6 +23,10 @@ public:
     KeyDown, KeyUp,
     MouseMove, MouseDown, MouseUp,
   };
+
+  using Ptr = std::unique_ptr<Event>;
+
+  virtual ~Event();
 
   auto type() const -> Type;
 

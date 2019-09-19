@@ -10,6 +10,10 @@ IEventLoop::~IEventLoop()
 {
 }
 
+Event::~Event()
+{
+}
+
 auto Event::type() const -> Type
 {
   return type_;

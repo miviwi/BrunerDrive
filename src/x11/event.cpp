@@ -5,6 +5,8 @@
 #include <cassert>
 #include <cstdlib>
 
+#include <utility>
+
 namespace brdrive {
 
 template <typename T = xcb_generic_event_t>
@@ -21,6 +23,21 @@ X11Event::X11Event(X11EventHandle ev) :
 X11Event::~X11Event()
 {
   free(event_);
+}
+
+auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
+{
+  auto event = Event::Ptr();
+  auto event_type = type_from_handle(ev);
+
+  switch(event_type) {
+  case Event::KeyUp:
+  case Event::KeyDown:
+    event.reset(new X11KeyEvent(ev, event_type));
+    break;
+  }
+
+  return std::move(event);
 }
 
 auto X11Event::x11_response_type(X11EventHandle ev) -> X11ResponseType
@@ -47,8 +64,8 @@ auto X11Event::type_from_handle(X11EventHandle ev) -> Event::Type
   return Event::Invalid;
 }
 
-X11KeyEvent::X11KeyEvent(X11EventHandle ev) :
-  X11Event(ev), IKeyEvent(type_from_handle(ev))
+X11KeyEvent::X11KeyEvent(X11EventHandle ev, Event::Type type) :
+  X11Event(ev), IKeyEvent(type)
 {
 }
 

@@ -2,6 +2,8 @@
 
 #include <window/event.h>
 
+#include <memory>
+
 namespace brdrive {
 
 using X11ResponseType = u8;
@@ -11,6 +13,8 @@ class X11Event {
 public:
   X11Event(const X11Event&) = delete;
   virtual ~X11Event();
+
+  static auto from_X11EventHandle(X11EventHandle ev) -> Event::Ptr;
 
 protected:
   X11Event(X11EventHandle ev);
@@ -23,10 +27,12 @@ protected:
 
 class X11KeyEvent : public X11Event, public IKeyEvent {
 public:
-  X11KeyEvent(X11EventHandle ev);
   virtual ~X11KeyEvent();
 
 private:
+  friend X11Event;
+
+  X11KeyEvent(X11EventHandle ev, Event::Type type);
 };
 
 }
