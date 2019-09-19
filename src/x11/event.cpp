@@ -1,4 +1,5 @@
 #include <x11/event.h>
+#include <x11/connection.h>
 
 #include <xcb/xcb.h>
 
@@ -75,21 +76,120 @@ auto X11Event::type_from_handle(X11EventHandle ev) -> Event::Type
 }
 
 X11KeyEvent::X11KeyEvent(X11EventHandle ev, Event::Type type) :
-  X11Event(ev), IKeyEvent(type)
+  X11Event(ev), IKeyEvent(type),
+  keycode_(Key::Invalid), keysym_(Key::Invalid)
 {
+  switch(type) {
+  case Event::KeyDown: {
+    auto key_press = xcb_ev<xcb_key_press_event_t>(ev);
+
+    keycode_ = key_press->detail;
+    keysym_  = x11().keycodeToKeysym(key_press->detail);
+    break;
+  }
+
+  case Event::KeyUp: {
+    auto key_release = xcb_ev<xcb_key_release_event_t>(ev);
+
+    keycode_ = key_release->detail;
+    keysym_  = x11().keycodeToKeysym(key_release->detail);
+    break;
+  }
+
+  default: assert(0);    // Unreachable
+  }
 }
 
 X11KeyEvent::~X11KeyEvent()
 {
 }
 
-X11MouseEvent::X11MouseEvent(X11EventHandle ev, Event::Type type) :
-  X11Event(ev), IMouseEvent(type)
+auto X11KeyEvent::code() -> u32
 {
+  return keycode_;
+}
+
+auto X11KeyEvent::sym() -> u32
+{
+  return keysym_;
+}
+
+X11MouseEvent::X11MouseEvent(X11EventHandle ev, Event::Type type) :
+  X11Event(ev), IMouseEvent(type),
+  point_(Vec2<i16>::zero()), delta_(Vec2<i16>::zero())
+{
+  switch(type) {
+  case Event::MouseMove: {
+    auto mouse_move = xcb_ev<xcb_motion_notify_event_t>(ev);
+
+    point_ = { mouse_move->event_x, mouse_move->event_y };
+    break;
+  }
+
+  case Event::MouseDown: {
+    auto mouse_down = xcb_ev<xcb_button_press_event_t>(ev);
+
+    point_ = { mouse_down->event_x, mouse_down->event_y };
+    break;
+  }
+
+  case Event::MouseUp: {
+    auto mouse_up = xcb_ev<xcb_button_release_event_t>(ev);
+
+    point_ = { mouse_up->event_x, mouse_up->event_y };
+    break;
+  }
+
+  default: assert(0);     // Unreachable
+  }
 }
 
 X11MouseEvent::~X11MouseEvent()
 {
+}
+
+auto X11MouseEvent::point() -> Vec2<i16>
+{
+  return point_;
+}
+
+auto X11MouseEvent::delta() -> Vec2<i16>
+{
+  return delta_;
+}
+
+X11EventLoop::~X11EventLoop()
+{
+}
+
+auto X11EventLoop::initInternal() -> bool
+{
+  return true;
+}
+
+auto X11EventLoop::pollEvent() -> Event::Ptr
+{
+  auto ev = xcb_poll_for_event(x11().connection<xcb_connection_t>());
+  if(!ev) return Event::Ptr();
+
+  // We have obtained a valid event handle but it's still possible
+  //   that it points to an internally handled event...
+  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+
+  // ...and if it does we'll try to poll once more
+  return pollEvent();
+}
+
+auto X11EventLoop::waitEvent() -> Event::Ptr
+{
+  auto ev = xcb_wait_for_event(x11().connection<xcb_connection_t>());
+  
+  // We have obtained a valid event handle but it's still possible
+  //   that it points to an internally handled event...
+  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+
+  // ...and if it does we'll wait some more for a valid one
+  return waitEvent();
 }
 
 }

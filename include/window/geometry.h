@@ -15,4 +15,14 @@ struct Geometry {
   }
 };
 
+template <typename T>
+struct Vec2 {
+  T x, y;
+
+  static auto zero() -> Vec2
+  {
+    return { (T)0, (T)0 };
+  }
+};
+
 }
