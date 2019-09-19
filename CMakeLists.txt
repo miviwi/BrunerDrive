@@ -11,7 +11,7 @@ set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "-std=c++17 -g")
 
 target_include_directories (BrunerDrive PUBLIC ./include)
-target_link_libraries (BrunerDrive PRIVATE xcb X11-xcb ${X11_LIBRARIES})
+target_link_libraries (BrunerDrive PRIVATE xcb X11-xcb xcb-util ${X11_LIBRARIES})
 
 add_subdirectory (./src)
 

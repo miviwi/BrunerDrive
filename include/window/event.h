@@ -120,6 +120,12 @@ protected:
   // Should return 'false' if initialization fails
   virtual auto initInternal() -> bool = 0;
 
+  // Delegate of queueEmpty() when the queue
+  //   of IEventLoop (queue_) is empty
+  //   which should give the state of the
+  //   windowing system's queue
+  virtual auto queueEmptyInternal() const -> bool = 0;
+
   // Should return 'nullptr' if there are no more
   //   events to be processed right now
   virtual auto pollEvent() -> Event::Ptr = 0;

@@ -2,6 +2,7 @@
 #include <x11/connection.h>
 
 #include <xcb/xcb.h>
+#include <xcb/xcb_event.h>
 
 #include <cassert>
 #include <cstdlib>
@@ -59,7 +60,7 @@ auto X11Event::x11_response_type(X11EventHandle ev) -> X11ResponseType
 {
   assert(ev);
 
-  return xcb_ev(ev)->response_type & ~0x80;
+  return XCB_EVENT_RESPONSE_TYPE(xcb_ev(ev));
 }
 
 auto X11Event::type_from_handle(X11EventHandle ev) -> Event::Type
@@ -77,6 +78,16 @@ auto X11Event::type_from_handle(X11EventHandle ev) -> Event::Type
   }
 
   return Event::Invalid;
+}
+
+auto X11Event::is_internal(X11EventHandle ev) -> bool
+{
+  auto type = x11_response_type(ev);
+  switch(type) {
+  case XCB_EXPOSE: return true;
+  }
+
+  return false;
 }
 
 X11KeyEvent::X11KeyEvent(X11EventHandle ev) :
@@ -173,32 +184,61 @@ auto X11EventLoop::initInternal() -> bool
 
 auto X11EventLoop::pollEvent() -> Event::Ptr
 {
-  auto ev = xcb_poll_for_event(x11().connection<xcb_connection_t>());
+  auto connection = x11().connection<xcb_connection_t>();
+
+  // Poll until a non-internal event is returned
+  xcb_generic_event_t *ev = nullptr;
+  while( (ev = xcb_poll_for_event(connection)) ) {
+    if(!X11Event::is_internal(ev)) break;
+
+    // Process any internal events so they don't
+    //   escape from the X11EventLoop
+    processInternal(ev);
+  }
+
   if(!ev) return Event::Ptr();
 
-  // We have obtained a valid event handle but it's still possible
-  //   that it points to an internally handled event...
-  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+  // We've obtained a valid non-internal event
+  auto event = X11Event::from_X11EventHandle(ev);
+  assert(event.get());
 
-  // ...and if it does we'll try to poll once more
-  return pollEvent();
+  return std::move(event);
 }
 
 auto X11EventLoop::waitEvent() -> Event::Ptr
 {
-  auto ev = xcb_wait_for_event(x11().connection<xcb_connection_t>());
-  
-  // We have obtained a valid event handle but it's still possible
-  //   that it points to an internally handled event...
-  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+  auto connection = x11().connection<xcb_connection_t>();
+  auto event = Event::Ptr();
 
-  // ...and if it does we'll wait some more for a valid one
-  ev = xcb_wait_for_event(x11().connection<xcb_connection_t>());
-  if(auto event = X11Event::from_X11EventHandle(ev)) return std::move(event);
+  // Spin until a non-internal event is returned
+  xcb_generic_event_t *ev = nullptr;
+  while(true) {
+    ev = xcb_wait_for_event(connection);
+    if(!ev) return QuitEvent::alloc();     // NULL event signifies the window was closed
+                                           //   so signal the application should exit
+    if(!X11Event::is_internal(ev)) {
+      event = X11Event::from_X11EventHandle(ev);
+      if(event) break;
+    }
 
-  // If the event is invalid the SECOND time that means the
-  //   application was closed and we should post a QuitEvent
-  return QuitEvent::alloc();
+    // Process any internal events so they don't
+    //   escape from the X11EventLoop
+    processInternal(ev);
+  }
+
+  assert(event.get());
+
+  return std::move(event);
+}
+
+auto X11EventLoop::queueEmptyInternal() const -> bool
+{
+  return xcb_poll_for_queued_event(x11().connection<xcb_connection_t>());
+}
+
+void X11EventLoop::processInternal(X11EventHandle ev)
+{
+  // TODO...
 }
 
 }

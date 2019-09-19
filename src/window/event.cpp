@@ -63,7 +63,9 @@ auto IEventLoop::event(u32 flags) -> Event::Ptr
 
 auto IEventLoop::queueEmpty() const -> bool
 {
-  return queue_.empty();
+  if(queue_.empty()) return queueEmptyInternal();
+
+  return false;   // !queue_.empty()
 }
 
 void IEventLoop::fillQueue()

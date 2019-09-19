@@ -8,6 +8,9 @@
 
 namespace brdrive {
 
+// Forward declaration
+class X11EventLoop;
+
 using X11ResponseType = u8;
 using X11EventHandle  = void /* xcb_generic_event_t */ *;
 
@@ -19,10 +22,13 @@ public:
   static auto from_X11EventHandle(X11EventHandle ev) -> Event::Ptr;
 
 protected:
+  friend X11EventLoop;
+
   X11Event(X11EventHandle ev);
 
   static auto x11_response_type(X11EventHandle ev) -> X11ResponseType;
   static auto type_from_handle(X11EventHandle ev) -> Event::Type;
+  static auto is_internal(X11EventHandle ev) -> bool;
 
   X11EventHandle event_;
 };
@@ -65,10 +71,13 @@ public:
 
 protected:
   virtual auto initInternal() -> bool;
+  virtual auto queueEmptyInternal() const -> bool;
 
   virtual auto pollEvent() -> Event::Ptr;
-
   virtual auto waitEvent() -> Event::Ptr;
+
+private:
+  void processInternal(X11EventHandle ev);
 };
 
 }
