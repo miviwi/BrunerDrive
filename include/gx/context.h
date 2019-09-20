@@ -8,6 +8,9 @@ namespace brdrive {
 // Forward declaration
 class IWindow;
 
+// Handle to the underlying OS-specific OpenGL context structure
+using GLContextHandle = void *;
+
 class GLContext {
 public:
   struct NoSuitableFramebufferConfigError : public std::runtime_error {
@@ -33,7 +36,10 @@ public:
   virtual ~GLContext();
 
   // Acquires and initializes the GLContext
-  virtual auto acquire(IWindow *window) -> GLContext& = 0;
+  virtual auto acquire(
+      IWindow *window, GLContext *share = nullptr
+    ) -> GLContext& = 0;
+
   // Makes this GLContext the 'current' context
   virtual auto makeCurrent() -> GLContext& = 0;
 
@@ -43,6 +49,11 @@ public:
   // Destroys the GLContext, which means
   //   acquire() can be called on it again
   virtual auto destroy() -> GLContext& = 0;
+
+  // Returns a handle to the underlying OS-specific
+  //   OpenGL context or nullptr if acquire() hasn't
+  //   yet been called
+  virtual auto handle() -> GLContextHandle = 0;
 
 protected:
 };
