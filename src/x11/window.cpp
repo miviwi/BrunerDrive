@@ -25,7 +25,7 @@ struct pX11Window {
   const xcb_setup_t *setup;
   xcb_screen_t *screen;
 
-  xcb_drawable_t window;
+  xcb_window_t window;
   xcb_gcontext_t bg;
 
   ~pX11Window();
@@ -199,6 +199,21 @@ auto X11Window::drawString(const std::string& str, const Geometry& geom, const C
   xcb_free_gc(p->connection, gc.value());
 
   return *this;
+}
+
+auto X11Window::destroy() -> IWindow&
+{
+  delete p;
+  p = nullptr;    // Make sure a double-free is not executed
+                  //   during the destructor
+  return *this;
+}
+
+auto X11Window::windowHandle() -> X11WindowHandle
+{
+  assert(p);
+
+  return p->window;
 }
 
 }

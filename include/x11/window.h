@@ -9,6 +9,11 @@
 
 namespace brdrive {
 
+using X11WindowHandle = u32;
+
+// Forward declaration
+class X11EventLoop;
+
 // PIMPL class
 struct pX11Window;
 
@@ -34,10 +39,16 @@ public:
   virtual auto create() -> IWindow&;
   virtual auto show() -> IWindow&;
 
+  virtual auto destroy() -> IWindow&;
+
   virtual auto drawString(const std::string& str, const Geometry& geom, const Color& color,
       const std::string& font = "") -> IWindow&;
 
+  auto windowHandle() -> X11WindowHandle;
+
 private:
+  friend X11EventLoop;
+
   pX11Window *p;
 };
 

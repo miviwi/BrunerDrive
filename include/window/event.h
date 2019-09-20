@@ -10,6 +10,8 @@
 
 namespace brdrive {
 
+// Forward declarations
+class IWindow;
 class IEventLoop;
 
 class Event {
@@ -36,6 +38,9 @@ protected:
 };
 
 struct Key {
+  enum : u32 {
+  };
+
   enum : u32 {
     LShift, RShift,
     LCtrl, RCtrl,
@@ -65,12 +70,12 @@ public:
   virtual ~IKeyEvent();
 
   // Returns the keyboard scancode 
-  virtual auto code() -> u32 = 0;
+  virtual auto code() const -> u32 = 0;
 
   // Returns the code() converted to an
   //   ASCII character/one of the 'Key'
   //   constants (listed above)
-  virtual auto sym() -> u32 = 0;
+  virtual auto sym() const -> u32 = 0;
 
   // Returns the printable character
   //   i.e. sym() which takes into
@@ -83,11 +88,20 @@ protected:
 
 class IMouseEvent {
 public:
+  enum : i16 {
+    InvalidCoord = ~0,
+  };
+
   virtual ~IMouseEvent();
 
-  virtual auto point() -> Vec2<i16> = 0;
+  // Returns the location of the mouse pointer
+  //   at the time of the event
+  virtual auto point() const -> Vec2<i16> = 0;
 
-  virtual auto delta() -> Vec2<i16> = 0;
+  // Returns the difference between the pointer's
+  //   location at the time of the event and
+  //   at the time of the last event
+  virtual auto delta() const -> Vec2<i16> = 0;
 
 protected:
 };
@@ -108,7 +122,7 @@ public:
   virtual ~IEventLoop();
 
   // Must be called before any other method
-  auto init() -> IEventLoop&;
+  auto init(IWindow *window) -> IEventLoop&;
 
   // Returns a nullptr when block == false and there
   //   aren't any events in the queue
@@ -134,10 +148,13 @@ protected:
   //   - Must NEVER return 'nullptr'
   virtual auto waitEvent() -> Event::Ptr = 0;
 
+  auto window() -> IWindow*;
+
 private:
   void fillQueue();
 
   bool was_init_;
+  IWindow *window_;
   std::deque<Event::Ptr> queue_;
 };
 

@@ -12,6 +12,8 @@ using X11SetupHandle      = const void /* xcb_setup_t */ *;
 using X11ScreenHandle     = void /* xcb_screen_t */ *;
 using X11KeyCode          = u8;
 
+using X11XlibDisplayHandle = void /* Display */ *;
+
 // PIMPL struct
 struct pX11Connection;
 
@@ -24,16 +26,21 @@ public:
   };
 
   X11Connection();
+  X11Connection(const X11Connection&) = delete;
   ~X11Connection();
 
   auto connect() -> X11Connection&;
 
-  // Returns a xcb_connection_t* as a X11ConnectionHandle
+  // Returns a xcb_connection_t* as an X11ConnectionHandle
   auto connectionHandle() -> X11ConnectionHandle;
-  // Returns a const xcb_setup_t* as a X11SetupHandle
+  // Returns a const xcb_setup_t* as an X11SetupHandle
   auto setupHandle() -> X11SetupHandle;
-  // Returns a const xcb_sscreen_t* as a X11screenHandle
+  // Returns a const xcb_sscreen_t* as an X11screenHandle
   auto screenHandle() -> X11ScreenHandle;
+  // Returns an Xlib Display* as an X11XlibDisplayHandle
+  auto xlibDisplayHandle() -> X11XlibDisplayHandle;
+
+  auto defaultScreen() -> int;
 
   // T must always be xcb_connection_t
   template <typename T>
@@ -54,6 +61,13 @@ public:
   auto screen() -> T*
   {
     return (T *)screenHandle();
+  }
+
+  // T must always be Display
+  template <typename T>
+  auto xlibDisplay() -> T*
+  {
+    return (T *)xlibDisplayHandle();
   }
 
   // Returns a new XId siutable for assigning

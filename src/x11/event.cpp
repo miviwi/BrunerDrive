@@ -1,6 +1,8 @@
 #include <x11/event.h>
 #include <x11/connection.h>
+#include <x11/window.h>
 
+// X11/xcb headers
 #include <xcb/xcb.h>
 #include <xcb/xcb_event.h>
 
@@ -28,7 +30,7 @@ X11Event::~X11Event()
   free(event_);
 }
 
-auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
+auto X11Event::from_X11EventHandle(X11EventLoop *event_loop, X11EventHandle ev) -> Event::Ptr
 {
   // Check if 'ev' is a valid handle
   if(!ev) return Event::Ptr();
@@ -43,13 +45,13 @@ auto X11Event::from_X11EventHandle(X11EventHandle ev) -> Event::Ptr
   switch(event_type) {
   case Event::KeyUp:
   case Event::KeyDown:
-    event.reset(new X11KeyEvent(ev));
+    event.reset(new X11KeyEvent(event_loop, ev));
     break;
     
   case Event::MouseMove:
   case Event::MouseDown:
   case Event::MouseUp:
-    event.reset(new X11MouseEvent(ev));
+    event.reset(new X11MouseEvent(event_loop, ev));
     break;
   }
 
@@ -90,7 +92,7 @@ auto X11Event::is_internal(X11EventHandle ev) -> bool
   return false;
 }
 
-X11KeyEvent::X11KeyEvent(X11EventHandle ev) :
+X11KeyEvent::X11KeyEvent(X11EventLoop *event_loop, X11EventHandle ev) :
   X11Event(ev),
   keycode_(Key::Invalid), keysym_(Key::Invalid)
 {
@@ -119,17 +121,17 @@ X11KeyEvent::~X11KeyEvent()
 {
 }
 
-auto X11KeyEvent::code() -> u32
+auto X11KeyEvent::code() const -> u32
 {
   return keycode_;
 }
 
-auto X11KeyEvent::sym() -> u32
+auto X11KeyEvent::sym() const -> u32
 {
   return keysym_;
 }
 
-X11MouseEvent::X11MouseEvent(X11EventHandle ev) :
+X11MouseEvent::X11MouseEvent(X11EventLoop *event_loop, X11EventHandle ev) :
   X11Event(ev),
   point_(Vec2<i16>::zero()), delta_(Vec2<i16>::zero())
 {
@@ -137,7 +139,13 @@ X11MouseEvent::X11MouseEvent(X11EventHandle ev) :
   case Event::MouseMove: {
     auto mouse_move = xcb_ev<xcb_motion_notify_event_t>(ev);
 
-    point_ = { mouse_move->event_x, mouse_move->event_y };
+    auto mouse_last = event_loop->mouse_last_;
+
+    auto point = Vec2<i16>{ mouse_move->event_x, mouse_move->event_y };
+    auto last  = (mouse_last.x != IMouseEvent::InvalidCoord) ? mouse_last : Vec2<i16>::zero();
+
+    point_ = point;
+    delta_ = { (i16)(point.x - last.x), (i16)(point.y - last.y) };
     break;
   }
 
@@ -163,14 +171,20 @@ X11MouseEvent::~X11MouseEvent()
 {
 }
 
-auto X11MouseEvent::point() -> Vec2<i16>
+auto X11MouseEvent::point() const -> Vec2<i16>
 {
   return point_;
 }
 
-auto X11MouseEvent::delta() -> Vec2<i16>
+auto X11MouseEvent::delta() const -> Vec2<i16>
 {
   return delta_;
+}
+
+X11EventLoop::X11EventLoop() :
+  mouse_last_({ InvalidCoord }), mouse_buttons_last_(0),
+  key_modifiers_(0)
+{
 }
 
 X11EventLoop::~X11EventLoop()
@@ -179,6 +193,29 @@ X11EventLoop::~X11EventLoop()
 
 auto X11EventLoop::initInternal() -> bool
 {
+#if 0
+  auto connection = x11().connection<xcb_connection_t>();
+  auto window = (X11Window *)IEventLoop::window();
+
+  auto pointer_query_cookie = xcb_query_pointer(
+      connection, window->windowHandle()
+  );
+
+  xcb_generic_error_t *err = nullptr;
+  auto pointer_reply = xcb_query_pointer_reply(
+      connection, pointer_query_cookie, &err
+  );
+  if(err) {      // If there was an error - cleanup and inform the parent class
+    free(err);
+    free(pointer_reply);
+
+    return false;
+  }
+
+  mouse_last_ = { pointer_reply->win_x, pointer_reply->win_y };
+  free(pointer_reply);
+#endif
+
   return true;
 }
 
@@ -199,8 +236,11 @@ auto X11EventLoop::pollEvent() -> Event::Ptr
   if(!ev) return Event::Ptr();
 
   // We've obtained a valid non-internal event
-  auto event = X11Event::from_X11EventHandle(ev);
+  auto event = X11Event::from_X11EventHandle(this, ev);
   assert(event.get());
+
+  // Make sure the internal data structures are updated
+  updateInternalData(event.get());
 
   return std::move(event);
 }
@@ -214,10 +254,10 @@ auto X11EventLoop::waitEvent() -> Event::Ptr
   xcb_generic_event_t *ev = nullptr;
   while(true) {
     ev = xcb_wait_for_event(connection);
-    if(!ev) return QuitEvent::alloc();     // NULL event signifies the window was closed
+    if(!ev) return QuitEvent::alloc();     // NULL event signifies the window was closed -
                                            //   so signal the application should exit
     if(!X11Event::is_internal(ev)) {
-      event = X11Event::from_X11EventHandle(ev);
+      event = X11Event::from_X11EventHandle(this, ev);
       if(event) break;
     }
 
@@ -227,6 +267,9 @@ auto X11EventLoop::waitEvent() -> Event::Ptr
   }
 
   assert(event.get());
+
+  // Make sure the internal data structures are updated
+  updateInternalData(event.get());
 
   return std::move(event);
 }
@@ -238,7 +281,24 @@ auto X11EventLoop::queueEmptyInternal() const -> bool
 
 void X11EventLoop::processInternal(X11EventHandle ev)
 {
-  // TODO...
+  auto response_type = X11Event::x11_response_type(ev);
+  switch(response_type) {
+  case XCB_EXPOSE: break;
+  }
+}
+
+void X11EventLoop::updateInternalData(const Event *event)
+{
+  switch(event->type()) {
+  case Event::MouseMove:       // Update the last mouse position when
+  case Event::MouseDown:       //   a mouse event occurs
+  case Event::MouseUp: {
+    auto mouse = (const IMouseEvent *)event;
+    mouse_last_ = mouse->point();
+
+    break;
+  }
+  }
 }
 
 }

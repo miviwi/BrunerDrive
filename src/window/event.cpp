@@ -1,4 +1,5 @@
 #include <window/event.h>
+#include <window/window.h>
 
 #include <cassert>
 
@@ -16,8 +17,10 @@ IEventLoop::~IEventLoop()
 {
 }
 
-auto IEventLoop::init() -> IEventLoop&
+auto IEventLoop::init(IWindow *window) -> IEventLoop&
 {
+  window_ = window;
+
   if(!initInternal()) throw InitError();
   was_init_ = true;
 
@@ -72,6 +75,11 @@ void IEventLoop::fillQueue()
 {
   // Fill up the queue (as much as possible)...
   while(auto new_event = pollEvent()) queue_.push_back(std::move(new_event));
+}
+
+auto IEventLoop::window() -> IWindow*
+{
+  return window_;
 }
 
 Event::~Event()

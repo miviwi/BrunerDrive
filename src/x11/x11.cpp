@@ -20,6 +20,11 @@ void x11_finalize()
   g_x11.reset();
 }
 
+auto x11_was_init() -> bool
+{
+  return g_x11.get();
+}
+
 auto x11() -> X11Connection&
 {
   assert(g_x11.get() && "x11() can only be called AFTER x11_init()!");

@@ -2,6 +2,8 @@
 
 // X11/xcb headers
 #include <xcb/xcb.h>
+#include <X11/Xlib.h>
+#include <X11/Xlib-xcb.h>
 #include <X11/keysymdef.h>
 
 #include <cassert>
@@ -12,6 +14,9 @@
 namespace brdrive {
 
 struct pX11Connection {
+  Display *xlib_display;
+  int default_screen;
+
   xcb_connection_t *connection;
   const xcb_setup_t *setup;
   xcb_screen_t *screen;
@@ -37,14 +42,33 @@ pX11Connection::~pX11Connection()
 
 auto pX11Connection::connect() -> bool
 {
-  connection = xcb_connect(nullptr, nullptr);
+  // Need to connect through Xlib to use GLX
+  xlib_display = XOpenDisplay(nullptr);
+  if(!xlib_display) return false;
+
+  default_screen = DefaultScreen(xlib_display);
+
+  // Create the xcb connection
+  connection = XGetXCBConnection(xlib_display);
   if(!connection) return false;
+
+  // Acquire event queue ownership
+  XSetEventQueueOwner(xlib_display, XCBOwnsEventQueue);
 
   setup = xcb_get_setup(connection);
   if(!setup) return false;
 
-  // get the primary (first) screen
-  screen = xcb_setup_roots_iterator(setup).data;
+  // Iterate to find the default screen...
+  auto roots_it = xcb_setup_roots_iterator(setup);
+  while(roots_it.index < default_screen) {
+    // Make sure we don't advance past the end
+    if(!roots_it.rem) return false;
+
+    xcb_screen_next(&roots_it);
+  }
+
+  // ...and save it
+  screen = roots_it.data;
 
   return true;
 }
@@ -120,6 +144,20 @@ auto X11Connection::screenHandle() -> X11ScreenHandle
   assert(p && "must be called AFTER connect()!");
 
   return p->screen;
+}
+
+auto X11Connection::xlibDisplayHandle() -> X11XlibDisplayHandle
+{
+  assert(p && "must be called AFTER connect()!");
+
+  return p->xlib_display;
+}
+
+auto X11Connection::defaultScreen() -> int
+{
+  assert(p && "must be called AFTER connect()!");
+
+  return p->default_screen;
 }
 
 auto X11Connection::genId() -> u32

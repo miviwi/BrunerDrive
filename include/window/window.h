@@ -26,6 +26,8 @@ public:
   virtual auto create() -> IWindow& = 0;
   virtual auto show() -> IWindow& = 0;
 
+  virtual auto destroy() -> IWindow& = 0;
+
   virtual auto drawString(const std::string& str, const Geometry& geom, const Color& color,
       const std::string& font = "") -> IWindow& = 0;
 
