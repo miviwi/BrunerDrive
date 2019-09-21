@@ -17,7 +17,7 @@ target_link_libraries (BrunerDrive PRIVATE
   xcb X11-xcb xcb-util ${X11_LIBRARIES}
 
   # OpenGL
-  ${OPENGL_opengl_LIBRARY} ${OPENGL_glx_LIBRARY}
+  GL
 )
 
 add_subdirectory (./src)

@@ -25,6 +25,9 @@ static int GLX_VisualAttribs[] = {
   GLX_BLUE_SIZE,  8,
   GLX_ALPHA_SIZE, 8,
 
+  GLX_DEPTH_SIZE, 24,
+  GLX_STENCIL_SIZE, 8,
+
   GLX_DOUBLEBUFFER, True,
 
   None,
@@ -59,8 +62,8 @@ GLXContext::~GLXContext()
 
 auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
 {
-  assert(brdrive::x11_was_init()
-      && "x11_init() MUST be called prior to creating a GLXContext!");
+  assert(brdrive::x11_was_init() &&
+      "x11_init() MUST be called prior to creating a GLXContext!");
 
   auto display = x11().xlibDisplay<Display>();
 
@@ -71,15 +74,34 @@ auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
   );
   if(!fb_configs || !num_fb_configs) throw NoSuitableFramebufferConfigError();
 
-  int visual_id = ~0;
+  // TODO: smarter way of choosing the FBConfig (?)
   auto fb_config = fb_configs[0];
-  glXGetFBConfigAttrib(
-      display, fb_config, GLX_VISUAL_ID, &visual_id
-  );
+  XVisualInfo *visual_info = glXGetVisualFromFBConfig(display, fb_config);
+
+  auto cleanup_x_structures = [&]() -> void {
+    XFree(visual_info);
+    XFree(fb_configs);
+  };
+
+  auto depth  = visual_info->depth;
+  auto visual = visual_info->visualid;
+
+  // The visual of the window must match that of the
+  //   FBConfig, so make sure that's the case before
+  //   assigning the context to it
+  auto window = (X11Window *)window_;
+  if(!window->recreateWithVisualId(depth, visual)) {
+    cleanup_x_structures();
+
+    throw X11Window::X11InternalError();
+  }
+
+  // The XID of the window
+  auto x11_window_handle = window->windowHandle();
 
   p = new pGLXContext();
-  p->display = display;
 
+  p->display = display;
   p->context = glXCreateNewContext(
       display, fb_config, GLX_RGBA_TYPE,
       /* shareList */ share ? (::GLXContext)share->handle() : nullptr,
@@ -87,20 +109,20 @@ auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
   );
   if(!p->context) throw AcquireError();
 
-  auto window = (X11Window *)window_;
-  auto x11_window_handle = window->windowHandle();
-
   p->window = glXCreateWindow(
       display, fb_config, x11_window_handle, nullptr
   );
   if(!p->window) {
     glXDestroyContext(display, p->context);
+    cleanup_x_structures();
 
     delete p;
     p = nullptr;
 
     throw AcquireError();
   }
+
+  cleanup_x_structures();
 
   return *this;
 }

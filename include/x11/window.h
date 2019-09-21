@@ -11,8 +11,9 @@ namespace brdrive {
 
 using X11WindowHandle = u32;
 
-// Forward declaration
+// Forward declarations
 class X11EventLoop;
+class GLXContext;
 
 // PIMPL class
 struct pX11Window;
@@ -48,6 +49,11 @@ public:
 
 private:
   friend X11EventLoop;
+  friend GLXContext;
+
+  // Used by GLXContext to make sure the window has
+  //   the visual required by the chosen FBConfig
+  auto recreateWithVisualId(u8 depth, u32 visual_id) -> bool;
 
   pX11Window *p;
 };

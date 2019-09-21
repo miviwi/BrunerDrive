@@ -1,5 +1,6 @@
 #pragma once
 
+#include <types.h>
 #include <gx/context.h>
 
 namespace brdrive {

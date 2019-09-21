@@ -3,6 +3,7 @@
 
 // X11/xcb headers
 #include <xcb/xcb.h>
+#include <xcb/xcb_util.h>
 #include <X11/keysymdef.h>
 
 #include <cassert>
@@ -26,7 +27,7 @@ struct pX11Window {
   xcb_screen_t *screen;
 
   xcb_window_t window;
-  xcb_gcontext_t bg;
+  xcb_colormap_t colormap;
 
   ~pX11Window();
 
@@ -65,10 +66,17 @@ struct pX11Window {
     return std::nullopt;
   }
 
-private:
-  auto createWindow(const Geometry& geom, const Color& bg_color) -> bool;
-  auto createBg(const Color& bg_color) -> bool;
+  // Make SURE to free any existing windows/colormaps before
+  //   calling the methods below!
 
+  auto createColormap(xcb_visualid_t visual = 0) -> bool;
+
+  auto createWindow(
+      const Geometry& geom, const Color& bg_color,
+      u8 depth = 0, xcb_visualid_t visual = 0
+    ) -> bool;
+
+private:
   auto openFont(const std::string& font_name) -> std::optional<xcb_font_t>;
 
   std::unordered_map<std::string, xcb_font_t> fonts;
@@ -77,7 +85,7 @@ private:
 pX11Window::~pX11Window()
 {
   xcb_destroy_window(connection, window);
-  xcb_free_gc(connection, bg);
+  xcb_free_colormap(connection, colormap);
 
   for(const auto& [name, font] : fonts) {
     xcb_close_font(connection, font);
@@ -91,6 +99,7 @@ auto pX11Window::init(const Geometry& geom, const Color& bg_color) -> bool
   screen = x11().screen<xcb_screen_t>();
 
   window = screen->root;
+  if(!createColormap()) return false;
   if(!createWindow(geom, bg_color)) return false;
 
   return true;
@@ -111,21 +120,27 @@ auto pX11Window::openFont(const std::string& font) -> std::optional<xcb_font_t>
   return std::nullopt;
 }
 
-auto pX11Window::createWindow(const Geometry& geom, const Color& bg_color) -> bool
+auto pX11Window::createWindow(
+    const Geometry& geom, const Color& bg_color,
+    u8 depth, xcb_visualid_t visual
+  ) -> bool
 {
+  // Acquire an id for the window
   window = x11().genId();
-  u32 mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
+
+  u32 mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP;
   u32 args[] = {
     bg_color.bgr(),                       /* XCB_CW_BACK_PIXEL */
     XCB_EVENT_MASK_EXPOSURE               /* XCB_CW_EVENT_MASK */
     | XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE
     | XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_BUTTON_MOTION
     | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE,
+    colormap,
   };
   auto window_cookie = xcb_create_window_checked(
       connection,
-      screen->root_depth, window, screen->root, geom.x, geom.y, geom.w, geom.h, 0,
-      XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, mask, args
+      visual ? depth : screen->root_depth, window, screen->root, geom.x, geom.y, geom.w, geom.h, 0,
+      XCB_WINDOW_CLASS_INPUT_OUTPUT, visual ? visual : screen->root_visual, mask, args
   );
   auto err = xcb_request_check(connection, window_cookie);
   if(!err) return true;
@@ -135,13 +150,20 @@ auto pX11Window::createWindow(const Geometry& geom, const Color& bg_color) -> bo
   return false;
 }
 
-auto pX11Window::createBg(const Color& bg_color) -> bool
+auto pX11Window::createColormap(xcb_visualid_t visual) -> bool
 {
-  if(auto bg_ = createGc(XCB_GC_BACKGROUND, gc_args(bg_color.bgr()))) {
-    bg = bg_.value();
-    return true;
-  }
+  // Acquire an id for the colormap
+  colormap = x11().genId();
 
+  auto colormap_cookie = xcb_create_colormap(
+    connection, XCB_COLORMAP_ALLOC_NONE, colormap,
+    screen->root, visual ? visual : screen->root_visual
+  );
+  auto err = xcb_request_check(connection, colormap_cookie);
+  if(!err) return true;
+
+  // There was an error - cleanup and signal failure
+  free(err);
   return false;
 }
 
@@ -169,8 +191,8 @@ auto X11Window::show() -> IWindow&
   assert(p && "can only be called after create()!");
 
   xcb_map_window(p->connection, p->window);
-  x11().flush();
-
+  x11().flush();    // Make sure the request gets fulfilled
+                    //   before the method returns
   return *this;
 }
 
@@ -214,6 +236,29 @@ auto X11Window::windowHandle() -> X11WindowHandle
   assert(p);
 
   return p->window;
+}
+
+auto X11Window::recreateWithVisualId(u8 depth, u32 visual_id) -> bool
+{
+  xcb_destroy_window(p->connection, p->window);
+  xcb_free_colormap(p->connection, p->colormap);
+
+  p->window = 0;
+  p->colormap = 0;
+
+  // When creating a window with an arbitrarily chosen visual
+  //   we must also create a colormap with a visual which
+  //   is the same as the one chosen for the window.
+  //  - Failing to do so results in a BadMatch X server
+  //    error when calling xcb_create_window()/XCreateWindow()
+  if(!p->createColormap(visual_id)) return false;
+  if(!p->createWindow(geometry_, background_, depth, visual_id)) return false;
+
+  // Newly created windows are
+  //   invisible by default
+  show();
+
+  return true;
 }
 
 }
