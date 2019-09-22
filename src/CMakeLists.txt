@@ -6,7 +6,12 @@ target_sources (BrunerDrive PRIVATE
   ${SrcDir}/window/window.cpp
   ${SrcDir}/window/event.cpp
 
+  # OpenGL
+  ${SrcDir}/gx/gx.cpp
   ${SrcDir}/gx/context.cpp
+  ${SrcDir}/gx/buffer.cpp
+  ${SrcDir}/gx/texture.cpp
+  ${SrcDir}/gx/program.cpp
 
   # X11 specific sources
   ${SrcDir}/x11/x11.cpp

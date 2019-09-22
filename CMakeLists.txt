@@ -12,15 +12,19 @@ set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "-std=c++17 -g")
 
 target_include_directories (BrunerDrive PUBLIC ./include)
+target_include_directories (BrunerDrive PRIVATE ./extern)
 target_link_libraries (BrunerDrive PRIVATE
   # X11
   xcb X11-xcb xcb-util ${X11_LIBRARIES}
 
   # OpenGL
   GL
+
+  ${CMAKE_DL_LIBS}  # OpenGL/gl3w dependency
 )
 
 add_subdirectory (./src)
+add_subdirectory (./extern)
 
 # For YouCompleteMe syntactic completion
 if (EXISTS "${CMAKE_CURRENT_BINARY_DIR}/compile_commands.json")

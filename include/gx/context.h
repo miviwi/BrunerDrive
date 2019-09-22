@@ -1,5 +1,7 @@
 #pragma once
 
+#include <gx/gx.h>
+
 #include <exception>
 #include <stdexcept>
 
