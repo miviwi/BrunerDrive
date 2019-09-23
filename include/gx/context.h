@@ -13,6 +13,10 @@ class IWindow;
 // Handle to the underlying OS-specific OpenGL context structure
 using GLContextHandle = void *;
 
+struct GLVersion {
+  int major, minor;
+};
+
 class GLContext {
 public:
   struct NoSuitableFramebufferConfigError : public std::runtime_error {
@@ -56,6 +60,9 @@ public:
   //   OpenGL context or nullptr if acquire() hasn't
   //   yet been called
   virtual auto handle() -> GLContextHandle = 0;
+
+  auto versionString() -> std::string;
+  auto version() -> GLVersion;
 
 protected:
 };

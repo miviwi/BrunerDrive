@@ -91,11 +91,16 @@ int main(int argc, char *argv[])
 
   brdrive::gx_init();
 
+  puts(gl_context.versionString().data());
+
+  auto gl_version = gl_context.version();
+  printf("OpenGL %d.%d\n", gl_version.major, gl_version.minor);
+
   brdrive::GLShader vert(brdrive::GLShader::Vertex);
   brdrive::GLShader frag(brdrive::GLShader::Fragment);
 
   vert.source(R"VERT(
-#version 130
+#version 330
 
 void main()
 {
@@ -109,7 +114,7 @@ void main()
 )VERT");
 
   frag.source(R"FRAG(
-#version 130
+#version 330
 
 out vec3 oFragColor;
 

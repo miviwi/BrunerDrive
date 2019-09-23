@@ -33,6 +33,26 @@ static int GLX_VisualAttribs[] = {
   None,
 };
 
+// glXCreateContextAttribsARB is an extension
+//   so it has to be defined manually
+//#define GLX_CONTEXT_MAJOR_VERSION_ARB       0x2091
+//#define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
+//#define GLX_CONTEXT_FLAGS_ARB               0x2094
+//#define GLX_CONTEXT_PROFILE_MASK_ARB        0x9126
+
+//#define GLX_CONTEXT_DEBUG_BIT_ARB               0x0001
+//#define GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB  0x0002
+
+//#define GLX_CONTEXT_CORE_PROFILE_BIT_ARB          0x00000001
+//#define GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+        
+using glXCreateContextAttribsARBFn = ::GLXContext (*)(
+    Display *, GLXFBConfig, ::GLXContext, Bool, const int *
+  );
+
+static bool g_createcontextattribs_queried = false;
+static glXCreateContextAttribsARBFn glXCreateContextAttribsARB = nullptr;
+
 struct pGLXContext {
   Display *display;
 
@@ -40,6 +60,13 @@ struct pGLXContext {
   GLXWindow window = 0;
 
   ~pGLXContext();
+
+  auto createContext(
+      const GLXFBConfig& fb_config, IWindow *window, GLContext *share
+    ) -> bool;
+  auto createContextLegacy(
+      const GLXFBConfig& fb_config, IWindow *window, GLContext *share
+    ) -> bool;
 };
 
 pGLXContext::~pGLXContext()
@@ -48,6 +75,53 @@ pGLXContext::~pGLXContext()
 
   if(window) glXDestroyWindow(display, window);
   if(context) glXDestroyContext(display, context);
+}
+
+auto pGLXContext::createContext(
+    const GLXFBConfig& fb_config, IWindow *window, GLContext *share
+  ) -> bool
+{
+  if(!g_createcontextattribs_queried) {
+    glXCreateContextAttribsARB = (glXCreateContextAttribsARBFn)
+      glXGetProcAddressARB((const GLubyte *)"glXCreateContextAttribsARB");
+  }
+
+  // Only old-style contexts are available 
+  if(!glXCreateContextAttribsARB) return false;
+
+  const int context_attribs[] = {
+    GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
+    GLX_CONTEXT_MINOR_VERSION_ARB, 3,
+    GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+
+    GLX_CONTEXT_FLAGS_ARB,
+    GLX_CONTEXT_DEBUG_BIT_ARB|GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+
+    None,
+  };
+
+  context = glXCreateContextAttribsARB(
+      display, fb_config, 
+      /* shareList */ share ? (::GLXContext)share->handle() : nullptr,
+      /* direct */ True,
+      context_attribs
+  );
+  if(!context) return false;
+
+  return true;
+}
+
+auto pGLXContext::createContextLegacy(
+    const GLXFBConfig& fb_config, IWindow *window, GLContext *share
+  ) -> bool
+{
+  context = glXCreateNewContext(
+      display, fb_config, GLX_RGBA_TYPE,
+      /* shareList */ share ? (::GLXContext)share->handle() : nullptr,
+      /* direct */ True
+  );
+
+  return context;
 }
 
 GLXContext::GLXContext() :
@@ -102,11 +176,15 @@ auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
   p = new pGLXContext();
 
   p->display = display;
-  p->context = glXCreateNewContext(
-      display, fb_config, GLX_RGBA_TYPE,
-      /* shareList */ share ? (::GLXContext)share->handle() : nullptr,
-      /* direct */ True
-  );
+
+  // Try to create a new-style context first...
+  if(!p->createContext(fb_config, window, share)) {
+    // ...and fallback to old-style glXCreateNewContext
+    //    if it fails
+    p->createContextLegacy(fb_config, window, share);
+  }
+
+  // Check if context creation was successful
   if(!p->context) throw AcquireError();
 
   p->window = glXCreateWindow(
