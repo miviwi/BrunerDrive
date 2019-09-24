@@ -30,6 +30,8 @@ enum class GLType : int {
   f16, f32,
 };
 
+static constexpr unsigned GLNumTexImageUnits = 16; // TODO: query OpenGL for this (?)
+
 // Can only be called AFTER acquiring an OpenGL context!
 void gx_init();
 void gx_finalize();

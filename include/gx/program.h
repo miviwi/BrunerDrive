@@ -74,12 +74,21 @@ public:
   auto attach(const GLShader& shader) -> GLProgram&;
   auto detach(const GLShader& shader) -> GLProgram&;
 
+  // - Can be called only AFTER attach()'ing all shaders
+  // - Must be called BEFORE the program is bound to the
+  //   pipeline
   auto link() -> GLProgram&;
   // Returns 'true' if link() was previously
   //   called (and succeeded) on this program
   auto linked() const -> bool;
 
+  // Returns a string containing error messages
+  //   after a LinkError() is thrown
   auto infoLog() const -> std::optional<std::string>;
+
+  // Bind the program to the pipeline
+  //   - Can ONLY be called if linked() == true
+  auto use() -> GLProgram&;
   
   auto uniform(const char *name, int i) -> GLProgram&;
 

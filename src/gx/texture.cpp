@@ -78,8 +78,31 @@ inline auto GLType_to_type(GLType type) -> GLenum
   return GL_INVALID_ENUM;
 }
 
-GLTexture2D::GLTexture2D() :
+GLTexture::GLTexture(GLEnum bind_target) :
   id_(GLNullObject),
+  bind_target_(bind_target)
+{
+}
+
+GLTexture::~GLTexture()
+{
+  if(id_ == GLNullObject) return;
+
+  glDeleteTextures(1, &id_);
+}
+
+auto GLTexture::id() const -> GLObject
+{
+  return id_;
+}
+
+auto GLTexture::bindTarget() const -> GLEnum
+{
+  return GL_TEXTURE_2D;
+}
+
+GLTexture2D::GLTexture2D() :
+  GLTexture(GL_TEXTURE_2D),
   width_(~0u), height_(~0u)
 {
 }
@@ -90,13 +113,7 @@ GLTexture2D::GLTexture2D(GLTexture2D&& other) :
   std::swap(id_, other.id_);
   std::swap(width_, other.width_);
   std::swap(height_, other.height_);
-}
-
-GLTexture2D::~GLTexture2D()
-{
-  if(id_ == GLNullObject) return;
-
-  glDeleteTextures(1, &id_);
+  std::swap(levels_, other.levels_);
 }
 
 auto GLTexture2D::alloc(unsigned width, unsigned height, unsigned levels, GLFormat internalformat) -> GLTexture2D&
@@ -170,9 +187,71 @@ auto GLTexture2D::upload(unsigned level, GLFormat format, GLType type, const voi
   return *this;
 }
 
-auto GLTexture2D::id() const -> GLObject
+GLSampler::GLSampler() :
+  id_(GLNullObject)
+{
+}
+
+GLSampler::GLSampler(GLSampler&& other) :
+  GLSampler()
+{
+  std::swap(id_, other.id_);
+}
+
+GLSampler::~GLSampler()
+{
+  if(id_ == GLNullObject) return;
+
+  glDeleteSamplers(1, &id_);
+}
+
+auto GLSampler::id() const -> GLObject
 {
   return id_;
+}
+
+GLTexImageUnit::GLTexImageUnit(unsigned slot) :
+  slot_(slot),
+  bound_texture_(GLNullObject), bound_sampler_(GLNullObject)
+{
+}
+
+auto GLTexImageUnit::bind(const GLTexture& tex) -> GLTexImageUnit&
+{
+  assert(tex.id() != GLNullObject && "attempted to bind() a null texture to a GLTexImageUnit!");
+
+  auto tex_id = tex.id();
+
+  // Only bind the texture if it's different than the current one
+  if(bound_texture_ == tex_id) return *this;
+
+  glActiveTexture(GL_TEXTURE0 + slot_);
+  assert(glGetError() == GL_NO_ERROR);
+
+  glBindTexture(tex.bindTarget(), tex_id);
+  bound_texture_ = tex_id;
+
+  return *this;
+}
+
+auto GLTexImageUnit::bind(const GLSampler& sampler) -> GLTexImageUnit&
+{
+  assert(sampler.id() != GLNullObject && "attempted to bind() a null sampler to a GLTexImageUnit!");
+
+  auto sampler_id = sampler.id();
+
+  // Only bind the sampler if it's different than the current one
+  if(bound_sampler_ == sampler_id) return *this;
+
+  glBindSampler(slot_, sampler.id());
+  bound_sampler_ = sampler.id();
+
+  return *this;
+}
+
+auto GLTexImageUnit::bind(const GLTexture& tex, const GLSampler& sampler) -> GLTexImageUnit&
+{
+  return bind(tex), bind(sampler);
 }
 
 }

@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
   brdrive::X11EventLoop event_loop;
 
   window
-    .geometry({ 0, 0, 960, 512 })
+    .geometry({ 0, 0, 960, 960 })
     .background(brdrive::Color(1.0f, 0.0f, 1.0f, 0.0f))
     .create()
     .show();
@@ -91,6 +91,9 @@ int main(int argc, char *argv[])
     .makeCurrent();
 
   brdrive::gx_init();
+
+  gl_context
+    .dbg_EnableMessages();
 
   puts(gl_context.versionString().data());
 
@@ -113,27 +116,77 @@ int main(int argc, char *argv[])
   vert.source(R"VERT(
 #version 330
 
+out vec3 voNDCPosition;
+out vec3 voVertexColor;
+
+const vec4 Positions[4] = vec4[](
+  vec4(-1.0f, +1.0f, 0.1f, 1.0f),
+  vec4(-1.0f, -1.0f, 0.1f, 1.0f),
+  vec4(+1.0f, -1.0f, 0.1f, 1.0f),
+  vec4(+1.0f, +1.0f, 0.1f, 1.0f)
+);
+
+const vec3 Colors[4] = vec3[](
+  vec3(1.0f, 0.0f, 0.0f),
+  vec3(1.0f, 1.0f, 0.0f),
+  vec3(0.0f, 0.5f, 1.0f),
+  vec3(0.5f, 0.0f, 0.8f)
+);
+
 void main()
 {
-  switch(gl_VertexID) {
-  case 0: gl_Position = vec4(-1.0f, +1.0f, 0.1f, 1.0f); break;
-  case 1: gl_Position = vec4(-1.0f, -1.0f, 0.1f, 1.0f); break;
-  case 2: gl_Position = vec4(+1.0f, -1.0f, 0.1f, 1.0f); break;
-  case 3: gl_Position = vec4(+1.0f, +1.0f, 0.1f, 1.0f); break;
-  }
+  voNDCPosition = Positions[gl_VertexID].xyz;
+  voVertexColor = Colors[gl_VertexID];
+  gl_Position   = Positions[gl_VertexID];
 }
 )VERT");
 
   frag.source(R"FRAG(
 #version 330
 
-out vec3 oFragColor;
+in vec3 voNDCPosition;
+in vec3 voVertexColor;
+
+out vec3 foFragColor;
 
 uniform sampler2D usOSD;
 
+const float Pi = 3.14159;
+
+vec3 circle(float r, vec3 inside, vec3 outside)
+{
+  vec2 pos = voNDCPosition.xy;
+
+  float d = pos.x*pos.x + pos.y*pos.y;
+  float mask = smoothstep(r - 0.005f, r + 0.005f, d);
+
+  return mix(inside, outside, mask);
+}
+
+vec3 checkerboard(vec2 offset, vec3 color_a, vec3 color_b)
+{
+  vec2 arg = voNDCPosition.xy*2.0f*Pi + offset;
+  float checkers = sin(arg.x) * cos(arg.y);
+
+  return mix(color_a, color_b, step(0.0f, checkers));
+}
+
 void main()
 {
-  oFragColor = texture(usOSD, gl_FragCoord.st).rgb;
+  const float Radius = 0.5f;
+
+  const vec3 Red    = vec3(1.0f, 0.0f, 0.0f);
+  const vec3 Blue   = vec3(0.08f, 0.4f, 0.75f);
+  const vec3 LBlue  = vec3(0.4f, 0.7f, 0.96f);
+  const vec3 Yellow = vec3(1.0f, 1.0f, 0.0f);
+  const vec3 Lime   = vec3(0.75f, 1.0f, 0.0f);
+  const vec3 Orange = vec3(1.0f, 0.4f, 0.0f);
+  const vec3 Black  = vec3(0.0f, 0.0f, 0.0f);
+  const vec3 White  = vec3(1.0f, 1.0f, 1.0f);
+
+//  foFragColor = circle(Radius, Yellow, LBlue);
+
+  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
 }
 )FRAG");
 
@@ -175,7 +228,6 @@ void main()
   gl_program
     .uniform("usOSD", 0);
 
-  glEnable(GL_TEXTURE_2D);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
@@ -198,8 +250,16 @@ void main()
     .alloc(8, 4096, 1, brdrive::r8)
     .upload(0, brdrive::r, brdrive::GLType::u8, topaz.data());
 
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, topaz_tex.id());
+  gl_context.texImageUnit(0)
+    .bind(topaz_tex);
+
+  gl_program
+    .use();
+
+  brdrive::GLObject vertex_array;
+  glGenVertexArrays(1, &vertex_array);
+
+  glBindVertexArray(vertex_array);
 
   bool running = true;
   while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {
@@ -243,9 +303,12 @@ void main()
       break;
     }
 
-/*
+
     glClear(GL_COLOR_BUFFER_BIT);
 
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+/*
     for(int i = 0; i < 32; i++) {
       float x1 = ((48.0f * (float)i) / 960.0f)-1.0f;
       float x2 = ((48.0f * (float)(i+1)) / 960.0f)-1.0f;
@@ -274,9 +337,9 @@ void main()
 
       glEnd();
     }
+    */
 
     gl_context.swapBuffers();
-    */
 
     if(!running) break;
   }

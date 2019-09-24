@@ -25,8 +25,8 @@ static int GLX_VisualAttribs[] = {
   GLX_BLUE_SIZE,  8,
   GLX_ALPHA_SIZE, 8,
 
-  GLX_DEPTH_SIZE, 24,
-  GLX_STENCIL_SIZE, 8,
+//  GLX_DEPTH_SIZE, 24,
+//  GLX_STENCIL_SIZE, 8,
 
   GLX_DOUBLEBUFFER, True,
 
@@ -35,17 +35,6 @@ static int GLX_VisualAttribs[] = {
 
 // glXCreateContextAttribsARB is an extension
 //   so it has to be defined manually
-//#define GLX_CONTEXT_MAJOR_VERSION_ARB       0x2091
-//#define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
-//#define GLX_CONTEXT_FLAGS_ARB               0x2094
-//#define GLX_CONTEXT_PROFILE_MASK_ARB        0x9126
-
-//#define GLX_CONTEXT_DEBUG_BIT_ARB               0x0001
-//#define GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB  0x0002
-
-//#define GLX_CONTEXT_CORE_PROFILE_BIT_ARB          0x00000001
-//#define GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
-        
 using glXCreateContextAttribsARBFn = ::GLXContext (*)(
     Display *, GLXFBConfig, ::GLXContext, Bool, const int *
   );
@@ -202,12 +191,15 @@ auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
 
   cleanup_x_structures();
 
+  // Mark the context as successfully acquired
+  was_acquired_ = true;
+
   return *this;
 }
 
 auto GLXContext::makeCurrent() -> GLContext&
 {
-  assert(p && "the context must've been acquire()'d to makeCurrent()!");
+  assert(was_acquired_ && "the context must've been acquire()'d to makeCurrent()!");
 
   auto display  = p->display;
   auto drawable = (GLXDrawable)p->window;
@@ -221,6 +213,8 @@ auto GLXContext::makeCurrent() -> GLContext&
 
 auto GLXContext::swapBuffers() -> GLContext&
 {
+  assert(was_acquired_ && "the context must've been acquire()'d to swapBuffers()!");
+
   auto drawable = (GLXDrawable)p->window;
   glXSwapBuffers(p->display, drawable);
 
@@ -229,6 +223,8 @@ auto GLXContext::swapBuffers() -> GLContext&
 
 auto GLXContext::destroy() -> GLContext&
 {
+  if(!p) return *this;
+
   delete p;
   p = nullptr;
 

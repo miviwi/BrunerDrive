@@ -19,6 +19,7 @@ public:
   virtual auto acquire(
       IWindow *window, GLContext *share = nullptr
     ) -> GLContext&;
+
   virtual auto makeCurrent() -> GLContext&;
   virtual auto swapBuffers() -> GLContext&;
   virtual auto destroy() -> GLContext&;

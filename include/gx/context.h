@@ -7,8 +7,13 @@
 
 namespace brdrive {
 
-// Forward declaration
+// Forward declarations
 class IWindow;
+
+class GLTexImageUnit;
+class GLTexture2D;
+class GLSampler;
+// --------------------
 
 // Handle to the underlying OS-specific OpenGL context structure
 using GLContextHandle = void *;
@@ -37,7 +42,13 @@ public:
     { }
   };
 
-  GLContext() = default;
+  struct NotADebugContextError : public std::runtime_error {
+    NotADebugContextError() :
+      std::runtime_error("the operation can only be performed on a debug OpenGL context!")
+    { }
+  };
+
+  GLContext();
   GLContext(const GLContext&) = delete;
   virtual ~GLContext();
 
@@ -61,10 +72,19 @@ public:
   //   yet been called
   virtual auto handle() -> GLContextHandle = 0;
 
+  auto texImageUnit(unsigned slot) -> GLTexImageUnit&;
+
+  // Can only be called AFTER gx_init()!
+  auto dbg_EnableMessages() -> GLContext&;
+
   auto versionString() -> std::string;
   auto version() -> GLVersion;
 
 protected:
+  bool was_acquired_;
+
+private:
+  GLTexImageUnit *tex_image_units_;  // Array
 };
 
 }

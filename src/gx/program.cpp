@@ -10,6 +10,8 @@
 
 namespace brdrive {
 
+thread_local GLObject g_bound_program = GLNullObject;
+
 auto Type_to_shaderType(GLShader::Type type) -> GLenum
 {
   switch(type) {
@@ -102,7 +104,7 @@ auto GLShader::compiled() const -> bool
 
 auto GLShader::infoLog() const -> std::optional<std::string>
 {
-  assert(id_ != GLNullObject);
+  if(id_ == GLNullObject) return std::nullopt;
 
   int info_log_length = -1;
   glGetShaderiv(id_, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -186,7 +188,7 @@ auto GLProgram::link() -> GLProgram&
 
 auto GLProgram::infoLog() const -> std::optional<std::string>
 {
-  assert(id_ != GLNullObject);
+  if(id_ == GLNullObject) return std::nullopt;
 
   int info_log_length = -1;
   glGetProgramiv(id_, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -201,6 +203,20 @@ auto GLProgram::infoLog() const -> std::optional<std::string>
   assert(glGetError() == GL_NO_ERROR);
 
   return std::move(info_log);
+}
+
+auto GLProgram::use() -> GLProgram&
+{
+  assert(linked_ &&
+    "attempted to use() a GLProgram which hasn't been link()'ed!");
+
+  // Only switch the program if it's not the same as the bound one
+  if(id_ == g_bound_program) return *this;
+
+  glUseProgram(id_);
+  g_bound_program = id_;
+
+  return *this;
 }
 
 auto GLProgram::uniform(const char *name, int i) -> GLProgram&
