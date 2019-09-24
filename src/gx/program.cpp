@@ -1,5 +1,7 @@
 #include <gx/program.h>
+#include <gx/extensions.h>
 
+// OpenGL/gl3w
 #include <GL/gl3w.h>
 
 #include <cassert>
@@ -30,6 +32,7 @@ GLShader::GLShader(GLShader&& other) :
   type_(other.type_)
 {
   std::swap(id_, other.id_);
+  std::swap(compiled_, other.compiled_);
 }
 
 GLShader::~GLShader()
@@ -115,7 +118,8 @@ auto GLShader::infoLog() const -> std::optional<std::string>
 }
 
 GLProgram::GLProgram() :
-  id_(GLNullObject)
+  id_(GLNullObject),
+  linked_(false)
 {
 }
 
@@ -123,6 +127,7 @@ GLProgram::GLProgram(GLProgram&& other) :
   GLProgram()
 {
   std::swap(id_, other.id_);
+  std::swap(linked_, other.linked_);
 }
 
 GLProgram::~GLProgram()
@@ -174,6 +179,8 @@ auto GLProgram::link() -> GLProgram&
   // Check if there was an error during linking the program
   if(link_successful != GL_TRUE) throw LinkError();
 
+  linked_ = true;
+
   return *this;
 }
 
@@ -190,8 +197,43 @@ auto GLProgram::infoLog() const -> std::optional<std::string>
 
   std::string info_log(info_log_length, 0);
   glGetProgramInfoLog(id_, info_log.size(), nullptr, info_log.data());
+  
+  assert(glGetError() == GL_NO_ERROR);
 
   return std::move(info_log);
+}
+
+auto GLProgram::uniform(const char *name, int i) -> GLProgram&
+{
+  assert(id_ != GLNullObject);
+  assert(linked_ &&
+    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
+
+  UniformLocation location = InvalidLocation;
+  auto location_it = uniforms_.find(name);
+  if(location_it == uniforms_.end()) {
+    location = glGetUniformLocation(id_, name);
+
+    uniforms_.emplace(name, location);
+  } else {
+    location = location_it->second;
+  }
+
+  // Avoid causing OpenGL errors
+  if(location == InvalidLocation) return *this;
+
+  // Use direct state access if it's available...
+  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+    glProgramUniform1i(id_, location, i);
+  } else {     // ...and fall back to the old path otherwise
+    glUseProgram(id_);
+
+    glUniform1i(id_, i);
+  }
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
 }
 
 }

@@ -9,6 +9,7 @@ target_sources (BrunerDrive PRIVATE
   # OpenGL
   ${SrcDir}/gx/gx.cpp
   ${SrcDir}/gx/context.cpp
+  ${SrcDir}/gx/extensions.cpp
   ${SrcDir}/gx/buffer.cpp
   ${SrcDir}/gx/texture.cpp
   ${SrcDir}/gx/program.cpp

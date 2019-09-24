@@ -7,6 +7,7 @@
 #include <window/color.h>
 #include <window/window.h>
 #include <gx/gx.h>
+#include <gx/extensions.h>
 #include <gx/context.h>
 #include <gx/buffer.h>
 #include <gx/texture.h>
@@ -96,6 +97,16 @@ int main(int argc, char *argv[])
   auto gl_version = gl_context.version();
   printf("OpenGL %d.%d\n", gl_version.major, gl_version.minor);
 
+  printf("ARB_vertex_attrib_binding: %d\n"
+    "ARB_separate_shader_objects: %d\n"
+    "ARB_direct_state_access: %d\n"
+    "EXT_direct_state_access: %d\n\n",
+    brdrive::ARB::vertex_attrib_binding(),
+    brdrive::ARB::separate_shader_objects(),
+    brdrive::ARB::direct_state_access(),
+    brdrive::EXT::direct_state_access()
+  );
+
   brdrive::GLShader vert(brdrive::GLShader::Vertex);
   brdrive::GLShader frag(brdrive::GLShader::Fragment);
 
@@ -118,11 +129,11 @@ void main()
 
 out vec3 oFragColor;
 
-uniform sampler2D uOSD;
+uniform sampler2D usOSD;
 
 void main()
 {
-  oFragColor = texture(uOSD, gl_FragCoord.st).rgb;
+  oFragColor = texture(usOSD, gl_FragCoord.st).rgb;
 }
 )FRAG");
 
@@ -161,6 +172,9 @@ void main()
     .detach(vert)
     .detach(frag);
 
+  gl_program
+    .uniform("usOSD", 0);
+
   glEnable(GL_TEXTURE_2D);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
@@ -178,44 +192,14 @@ void main()
 
   auto c = brdrive::x11().connection<xcb_connection_t>();
 
-  unsigned topaz_tex = 0;
-  glGenTextures(1, &topaz_tex);
+  brdrive::GLTexture2D topaz_tex;
+
+  topaz_tex
+    .alloc(8, 4096, 1, brdrive::r8)
+    .upload(0, brdrive::r, brdrive::GLType::u8, topaz.data());
 
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, topaz_tex);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 8, 4096, 0, GL_RED, GL_UNSIGNED_BYTE, topaz.data());
-
-  /*
-  float tex_env_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-  glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, tex_env_color);
-
-  int tex_env_mode[] = { GL_MODULATE };
-  glTexEnviv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, tex_env_mode);
-//  int tex_env_combine_rgb[] = { GL_MODULATE };
-//  glTexEnviv(GL_TEXTURE_ENV, GL_COMBINE_RGB, tex_env_combine_rgb);
-
-  int tex_env_src0_rgb[] = { GL_TEXTURE };
-  glTexEnviv(GL_TEXTURE_ENV, GL_SRC0_RGB, tex_env_src0_rgb);
-  int tex_env_op0_rgb[] = { GL_SRC_COLOR };
-  glTexEnviv(GL_TEXTURE_ENV, GL_OPERAND0_RGB, tex_env_op0_rgb);
-  int tex_env_src0_a[] = { GL_TEXTURE };
-  glTexEnviv(GL_TEXTURE_ENV, GL_SRC0_ALPHA, tex_env_src0_a);
-  int tex_env_op0_a[] = { GL_SRC_ALPHA };
-  glTexEnviv(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, tex_env_op0_a);
-
-  int tex_env_src1_rgb[] = { GL_CONSTANT };
-  glTexEnviv(GL_TEXTURE_ENV, GL_SRC1_RGB, tex_env_src1_rgb);
-  int tex_env_op1_rgb[] = { GL_SRC_COLOR };
-  glTexEnviv(GL_TEXTURE_ENV, GL_OPERAND1_RGB, tex_env_op1_rgb);
-  int tex_env_src1_a[] = { GL_CONSTANT };
-  glTexEnviv(GL_TEXTURE_ENV, GL_SRC1_ALPHA, tex_env_src1_a);
-  int tex_env_op1_a[] = { GL_SRC_ALPHA };
-  glTexEnviv(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, tex_env_op1_a);
-  */
+  glBindTexture(GL_TEXTURE_2D, topaz_tex.id());
 
   bool running = true;
   while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {
@@ -259,6 +243,7 @@ void main()
       break;
     }
 
+/*
     glClear(GL_COLOR_BUFFER_BIT);
 
     for(int i = 0; i < 32; i++) {
@@ -269,7 +254,6 @@ void main()
 
       //printf("x1=%f x2=%f v1=%f v2=%f\n", x1, x2, v1, v2);
 
-      /*
       glBegin(GL_TRIANGLE_FAN);
 
       //glColor3f(0.0f, 1.0f, 0.0f);
@@ -289,10 +273,10 @@ void main()
       glVertex2f(x2, 1.0f);
 
       glEnd();
-      */
     }
 
     gl_context.swapBuffers();
+    */
 
     if(!running) break;
   }

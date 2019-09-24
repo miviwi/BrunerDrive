@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <string_view>
 #include <optional>
 
@@ -53,6 +54,12 @@ private:
 
 class GLProgram {
 public:
+  using UniformLocation = int;
+
+  enum : UniformLocation {
+    InvalidLocation = -1,
+  };
+
   struct LinkError : public std::runtime_error {
     LinkError() :
       std::runtime_error("linking the GLProgram failed!")
@@ -68,11 +75,20 @@ public:
   auto detach(const GLShader& shader) -> GLProgram&;
 
   auto link() -> GLProgram&;
+  // Returns 'true' if link() was previously
+  //   called (and succeeded) on this program
+  auto linked() const -> bool;
 
   auto infoLog() const -> std::optional<std::string>;
+  
+  auto uniform(const char *name, int i) -> GLProgram&;
 
 private:
   GLObject id_;
+  bool linked_;
+
+  // Lazy-initialized when uploading a uniform for the first time
+  std::unordered_map<std::string, UniformLocation> uniforms_;
 };
 
 }
