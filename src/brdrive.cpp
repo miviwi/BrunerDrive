@@ -116,8 +116,10 @@ int main(int argc, char *argv[])
   vert.source(R"VERT(
 #version 330
 
-out vec3 voNDCPosition;
-out vec3 voVertexColor;
+out Vertex {
+  vec3 ScreenPosition;
+  vec3 Color;
+} vo;
 
 const vec4 Positions[4] = vec4[](
   vec4(-1.0f, +1.0f, 0.1f, 1.0f),
@@ -135,17 +137,26 @@ const vec3 Colors[4] = vec3[](
 
 void main()
 {
-  voNDCPosition = Positions[gl_VertexID].xyz;
-  voVertexColor = Colors[gl_VertexID];
-  gl_Position   = Positions[gl_VertexID];
+  vec4 pos   = Positions[gl_VertexID];
+  vec3 color = Colors[gl_VertexID];
+
+  const float ScreenAspect = 16.0f/9.0f;
+  vec3 screen_pos = vec3(pos.x * ScreenAspect, pos.yz);
+
+  vo.ScreenPosition = screen_pos;
+  vo.Color = color;
+
+  gl_Position = pos;
 }
 )VERT");
 
   frag.source(R"FRAG(
 #version 330
 
-in vec3 voNDCPosition;
-in vec3 voVertexColor;
+in Vertex {
+  vec3 ScreenPosition;
+  vec3 Color;
+} fi;
 
 out vec3 foFragColor;
 
@@ -155,7 +166,7 @@ const float Pi = 3.14159;
 
 vec3 circle(float r, vec3 inside, vec3 outside)
 {
-  vec2 pos = voNDCPosition.xy;
+  vec2 pos = fi.ScreenPosition.xy;
 
   float d = pos.x*pos.x + pos.y*pos.y;
   float mask = smoothstep(r - 0.005f, r + 0.005f, d);
@@ -165,7 +176,7 @@ vec3 circle(float r, vec3 inside, vec3 outside)
 
 vec3 checkerboard(vec2 offset, vec3 color_a, vec3 color_b)
 {
-  vec2 arg = voNDCPosition.xy*2.0f*Pi + offset;
+  vec2 arg = fi.ScreenPosition.xy*2.0f*Pi + offset;
   float checkers = sin(arg.x) * cos(arg.y);
 
   return mix(color_a, color_b, step(0.0f, checkers));
@@ -184,9 +195,9 @@ void main()
   const vec3 Black  = vec3(0.0f, 0.0f, 0.0f);
   const vec3 White  = vec3(1.0f, 1.0f, 1.0f);
 
-//  foFragColor = circle(Radius, Yellow, LBlue);
+  foFragColor = circle(Radius, Yellow, LBlue);
 
-  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
+//  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
 }
 )FRAG");
 
@@ -244,11 +255,18 @@ void main()
 
   auto c = brdrive::x11().connection<xcb_connection_t>();
 
+  auto topaz_tex_pixel_buf = brdrive::GLPixelBuffer(brdrive::GLPixelBuffer::Upload);
+
+  topaz_tex_pixel_buf
+    .alloc(topaz.size(), brdrive::GLBuffer::StaticRead, topaz.data());
+
   brdrive::GLTexture2D topaz_tex;
 
   topaz_tex
-    .alloc(8, 4096, 1, brdrive::r8)
-    .upload(0, brdrive::r, brdrive::GLType::u8, topaz.data());
+    .alloc(8, 4096, 1, brdrive::r8);
+
+  topaz_tex_pixel_buf
+    .uploadTexture(topaz_tex, 0, brdrive::r, brdrive::GLType::u8);
 
   gl_context.texImageUnit(0)
     .bind(topaz_tex);

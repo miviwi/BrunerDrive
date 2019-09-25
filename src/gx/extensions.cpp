@@ -64,6 +64,12 @@ auto texture_storage() -> bool
   return query_extension_cached("GL_ARB_texture_storage", &g_texture_storage);
 }
 
+thread_local int g_buffer_storage = -1;
+auto buffer_storage() -> bool
+{
+  return query_extension_cached("GL_ARB_buffer_storage", &g_buffer_storage);
+}
+
 thread_local int g_direct_state_access = -1;
 auto direct_state_access() -> bool
 {

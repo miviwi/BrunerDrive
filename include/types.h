@@ -7,6 +7,9 @@ namespace brdrive {
   
 using size_t = std::size_t;
 
+using iptr = std::intptr_t;
+using uptr = std::uintptr_t;
+
 using u8  = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;

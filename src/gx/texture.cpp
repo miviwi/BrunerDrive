@@ -11,7 +11,37 @@
 
 namespace brdrive {
 
-inline auto GLFormat_to_internalformat(GLFormat format) -> GLenum
+inline constexpr auto bind_target_to_Dimensions(GLEnum bind_target) -> GLTexture::Dimensions
+{
+  switch(bind_target) {
+  case GL_TEXTURE_1D:
+    return GLTexture::TexImage1D;
+
+  case GL_TEXTURE_1D_ARRAY:
+  case GL_TEXTURE_2D:
+#if 0
+// Almost sure there aren't needed but keeping them could save lots of typing ;)
+  case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
+  case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
+  case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
+  case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
+  case GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
+  case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
+#endif
+  case GL_TEXTURE_CUBE_MAP:
+    return GLTexture::TexImage2D;
+
+  case GL_TEXTURE_2D_ARRAY:
+  case GL_TEXTURE_3D:
+    return GLTexture::TexImage3D;
+
+  default: ;         // Fallthrough (silence warnings)
+  }
+
+  return GLTexture::DimensionsInvalid;
+}
+
+inline constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
 {
   switch(format) {
   case r:     return GL_RED;
@@ -40,7 +70,7 @@ inline auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   return GL_INVALID_ENUM;
 }
 
-inline auto GLFormat_to_format(GLFormat format) -> GLenum
+inline constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
 {
   switch(format) {
   case r:    return GL_RED;
@@ -57,7 +87,7 @@ inline auto GLFormat_to_format(GLFormat format) -> GLenum
   return GL_INVALID_ENUM;
 }
 
-inline auto GLType_to_type(GLType type) -> GLenum
+inline constexpr auto GLType_to_type(GLType type) -> GLenum
 {
   switch(type) {
   case GLType::u8:  return GL_UNSIGNED_BYTE;
@@ -80,7 +110,10 @@ inline auto GLType_to_type(GLType type) -> GLenum
 
 GLTexture::GLTexture(GLEnum bind_target) :
   id_(GLNullObject),
-  bind_target_(bind_target)
+  dimensions_(bind_target_to_Dimensions(bind_target)),
+  bind_target_(bind_target),
+  width_(1), height_(1), depth_(1),
+  levels_(~0u)
 {
 }
 
@@ -96,14 +129,33 @@ auto GLTexture::id() const -> GLObject
   return id_;
 }
 
+auto GLTexture::dimensions() const -> Dimensions
+{
+  return dimensions_;
+}
+
 auto GLTexture::bindTarget() const -> GLEnum
 {
   return GL_TEXTURE_2D;
 }
 
+auto GLTexture::width() const -> unsigned
+{
+  return width_;
+}
+
+auto GLTexture::height() const -> unsigned
+{
+  return height_;
+}
+
+auto GLTexture::depth() const -> unsigned
+{
+  return depth_;
+}
+
 GLTexture2D::GLTexture2D() :
-  GLTexture(GL_TEXTURE_2D),
-  width_(~0u), height_(~0u)
+  GLTexture(GL_TEXTURE_2D)
 {
 }
 
@@ -116,7 +168,9 @@ GLTexture2D::GLTexture2D(GLTexture2D&& other) :
   std::swap(levels_, other.levels_);
 }
 
-auto GLTexture2D::alloc(unsigned width, unsigned height, unsigned levels, GLFormat internalformat) -> GLTexture2D&
+auto GLTexture2D::alloc(
+    unsigned width, unsigned height, unsigned levels, GLFormat internalformat
+  ) -> GLTexture2D&
 {
   // Use direct state access if available
   if(ARB::direct_state_access() || EXT::direct_state_access()) {
@@ -162,7 +216,9 @@ auto GLTexture2D::alloc(unsigned width, unsigned height, unsigned levels, GLForm
   return *this;
 }
 
-auto GLTexture2D::upload(unsigned level, GLFormat format, GLType type, const void *data) -> GLTexture2D&
+auto GLTexture2D::upload(
+    unsigned level, GLFormat format, GLType type, const void *data
+  ) -> GLTexture2D&
 {
   auto gl_format = GLFormat_to_format(format);
   auto gl_type   = GLType_to_type(type);

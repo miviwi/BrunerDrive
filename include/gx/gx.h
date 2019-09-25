@@ -10,6 +10,8 @@ namespace brdrive {
 using GLEnum   = u16;
 using GLObject = unsigned;
 
+using GLSize = int;
+
 enum : GLObject {
   GLNullObject = ~0u,
 };
