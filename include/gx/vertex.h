@@ -9,17 +9,21 @@
 namespace brdrive {
 
 struct GLAttrFormat {
-  enum AttrType {
+  enum AttrType : u16 {
     Normalized, UnNormalized,    // glVertexAttribFormat()
     Integer,                     // glVertexAttribIFormat()
+
+    AttrInvalid
   };
 
-  AttrType attr_type;
+  AttrType attr_type = AttrInvalid;
 
   unsigned index;
   int size;    // MUST be in the range [1;4]
   GLEnum type; // Stores the OpenGL Glenum representation of the attribute's GLType
   unsigned offset;
+
+  auto attrByteSize() const -> GLSize;
 };
 
 class GLVertexFormat {
@@ -32,6 +36,13 @@ public:
   struct InvalidAttribTypeError : public std::runtime_error {
     InvalidAttribTypeError() :
       std::runtime_error("an invalid GLType was passed to [i]attr()!")
+    { }
+  };
+
+  struct ExceededAllowedAttribCountError : public std::runtime_error {
+    ExceededAllowedAttribCountError() :
+      std::runtime_error("the maximum allowed number (GLVertexFormat::MaxVertexAttribs) of"
+          "attributes of a vertex format has been exceeded!")
     { }
   };
 
@@ -55,6 +66,21 @@ public:
   auto iattr(int size, GLType type, unsigned offset) -> GLVertexFormat&;
 
 private:
+  auto currentAttrSlot() -> GLAttrFormat&;
+
+  // If the currentAttrSlot() (with index current_attrib_index_)
+  //   isn't taken the method returns 'current_attrib_index_',
+  // However if it IS taken, then the slots are scanned one-by-one
+  //   (by incrementing 'current_attrib_index_') and the index
+  //   of the first empty slot found is kept in current_attrib_index_
+  //   and returned.
+  auto nextAttrSlotIndex() -> unsigned;
+
+  // Add the desired vertex attribute at the next free index
+  auto appendAttr(
+      int size, GLType type, unsigned offset, AttrType attr_type
+  ) -> GLVertexFormat&;
+
   GLObject id_;
 
   unsigned current_attrib_index_;

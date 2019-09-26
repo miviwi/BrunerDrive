@@ -25,11 +25,11 @@ enum GLFormat : int {
 };
 
 enum class GLType : int {
-  u8, u16,
-  i8, i16,
+  i8, i16, i32,
+  u8, u16, u32,
   u16_565, u16_5551,
   u16_565r, u16_1555r,
-  f16, f32,
+  f16, f32, fixed16_16,
 };
 
 static constexpr unsigned GLNumTexImageUnits = 16; // TODO: query OpenGL for this (?)
