@@ -69,7 +69,7 @@ inline constexpr auto sizeof_type_GLenum(GLEnum type) -> GLSize
 //   component type then, to calculate the size of the entire
 //   attribute the value of sizeof_type_GLenum() must NOT
 //   be multiplied by the number of components (stored
-//   as GLAttrFormat::size)
+//   as GLVertexFormatAttr::size)
 inline constexpr auto type_is_packed(GLEnum type) -> bool
 {
   switch(type) {
@@ -81,7 +81,7 @@ inline constexpr auto type_is_packed(GLEnum type) -> bool
   return false;
 }
 
-auto GLAttrFormat::attrByteSize() const -> GLSize
+auto GLVertexFormatAttr::attrByteSize() const -> GLSize
 {
   if(attr_type == AttrInvalid) return 0;
 
@@ -100,90 +100,74 @@ auto GLAttrFormat::attrByteSize() const -> GLSize
   //   special case is accounted for
   auto num_components   = type_is_packed(type) ? 1 : size;
 
-  assert(sizeof_component && "The 'type' of this GLAttrFormat is invalid (?)");
+  assert(sizeof_component && "The 'type' of this GLVertexFormatAttr is invalid (?)");
 
   return num_components * sizeof_component;
 }
 
 GLVertexFormat::GLVertexFormat() :
-  id_(GLNullObject),
-
-  current_attrib_index_(0)
+  current_attrib_index_(0),
+  vertex_buffer_bitmask_(0)
 {
-}
-
-GLVertexFormat::GLVertexFormat(GLVertexFormat&& other) :
-  GLVertexFormat()
-{
-  std::swap(id_, other.id_);
-  std::swap(current_attrib_index_, other.current_attrib_index_);
-  std::swap(attr_formats_, other.attr_formats_);
-}
-
-GLVertexFormat::~GLVertexFormat()
-{
-  if(id_ == GLNullObject) return;
-
-  glDeleteVertexArrays(1, &id_);
 }
 
 auto GLVertexFormat::attr(
-    int size, GLType type, unsigned offset, AttrType attr_type
+    unsigned buffer_index, int size, GLType type, unsigned offset, AttrType attr_type
   ) -> GLVertexFormat&
 {
-  /*
-  // Lazily allocate the backing OpenGL object
-  if(id_ == GLNullObject) {
-    glGenVertexArrays(1, &id_);
-  }
-
-  glBindVertexArray(id_);
-
-
-  // Make sure attr_type is valid (i.e. one of Normalized, UnNormalized)
   assert((attr_type == AttrType::Normalized) || (attr_type == AttrType::UnNormalized) 
-      && "invalid AttrType passed to attr()!");
+      && "invalid AttryType (GLVertexFormatAttr::Type) passed to attr()!");
 
-  // Check if the (non-float) values should be normalized
-  GLboolean normalized = (attr_type == AttrType::Normalized) ? GL_TRUE : GL_FALSE;
-
-  glVertexAttribFormat(current_attrib_index_, size, type, normalized, offset);
-
-  // Make sure the call succeeded
-  assert(glGetError() == GL_NO_ERROR);
-  */
-
-
-  return appendAttr(size, type, offset, attr_type);
+  return appendAttr(buffer_index, size, type, offset, attr_type);
 }
 
-auto GLVertexFormat::iattr(int size, GLType type, unsigned offset) -> GLVertexFormat&
+auto GLVertexFormat::iattr(
+    unsigned buffer_index, int size, GLType type, unsigned offset
+  ) -> GLVertexFormat&
 {
-  // TODO: implement all of this :)
-  /*
-    // Lazily allocate the backing OpenGL object
-  if(id_ == GLNullObject) {
-    glGenVertexArrays(1, &id_);
+   return appendAttr(buffer_index, size, type, offset, AttrType::Integer);
+}
+
+auto GLVertexFormat::createVertexArray() const -> GLVertexArray
+{
+  GLVertexArray array;
+  glGenVertexArrays(1, &array.id_);
+
+  GLObject arrayid = array.id_;
+
+  for(size_t attr_idx = 0; attr_idx < MaxVertexAttribs; attr_idx++) {
+    const auto& attr = attributes_.at(attr_idx);
+
+    // Don't process empty attribute slots
+    if(attr.attr_type == AttrType::AttrInvalid) continue;
+
+    // Found a used attribute slot!
+    //   - Enable it in the VertexArray
+    glEnableVertexArrayAttrib(arrayid, attr_idx);
+
+    //   - Setup it's format
+    if(attr.attr_type == AttrType::Integer) {
+      glVertexArrayAttribIFormat(arrayid, attr_idx, attr.size, attr.type, attr.offset);
+    } else {
+      // Check if the (non-floating point) values should be normalized
+      GLboolean normalized = (attr.attr_type == AttrType::Normalized) ? GL_TRUE : GL_FALSE;
+
+      glVertexArrayAttribFormat(arrayid, attr_idx, attr.size, attr.type, normalized, attr.offset);
+    }
+
+    //   - Set it's vertex buffer 'bindingindex' to the desired one
+    glVertexArrayAttribBinding(arrayid, attr_idx, attr.buffer_index);
+
+    // Make sure no error(s) have occured
+    assert(glGetError() == GL_NO_ERROR);
   }
 
-  glBindVertexArray(id_);
-
-
-  // Check if the (non-float) values should be normalized
-  GLboolean normalized = (attr_type == AttrType::Normalized) ? GL_TRUE : GL_FALSE;
-
-  glVertexAttribFormat(current_attrib_index_, size, type, normalized, offset);
-
-  // Make sure the call succeeded
-  assert(glGetError() == GL_NO_ERROR);
-  */
-
-   return appendAttr(size, type, offset, AttrType::Integer);
+  return std::move(array);
 }
 
-auto GLVertexFormat::currentAttrSlot() -> GLAttrFormat&
+auto GLVertexFormat::currentAttrSlot() -> GLVertexFormatAttr&
 {
-  return attr_formats_.at(current_attrib_index_);
+  return attributes_.at(current_attrib_index_);
 }
 
 auto GLVertexFormat::nextAttrSlotIndex() -> unsigned
@@ -195,7 +179,7 @@ auto GLVertexFormat::nextAttrSlotIndex() -> unsigned
   do {
     current_attrib_index_++;
 
-    // Make sure we don't move past the end of the 'attr_formats_' array
+    // Make sure we don't move past the end of the 'attributes_' array
     if(current_attrib_index_ >= MaxVertexAttribs) throw ExceededAllowedAttribCountError();
   } while(currentAttrSlot().attr_type != AttrType::AttrInvalid);
 
@@ -203,29 +187,69 @@ auto GLVertexFormat::nextAttrSlotIndex() -> unsigned
 }
 
 auto GLVertexFormat::appendAttr(
-    int size, GLType type, unsigned offset, AttrType attr_type
+    unsigned buffer_index, int size, GLType type, unsigned offset, AttrType attr_type
   ) -> GLVertexFormat&
 {
   // Find a free attribute slot index
   auto attr_slot_idx = nextAttrSlotIndex();
-  auto& attr_slot = attr_formats_.at(attr_slot_idx);
+  auto& attr_slot = attributes_.at(attr_slot_idx);
 
   // Convert 'type_' to an OpenGL GLenum value
   auto gl_type = GLType_to_type(type);
   if(gl_type == GL_INVALID_ENUM) throw InvalidAttribTypeError();
 
+  // Ensure 'buffer_index' is in the allowable range
+  if(buffer_index >= MaxVertexBufferBindings) throw VertexBufferBindingIndexOutOfRangeError();
+
   // Save the attribute's properties to an internal data structure
-  attr_slot = GLAttrFormat {
+  attr_slot = GLVertexFormatAttr {
     attr_type,
 
-    current_attrib_index_,
+    buffer_index,
     size, gl_type, offset,
   };
+
+  // Mark the bit corresponding to 'buffer_index' in
+  //   the 'vertex_buffer_bitmask_' so this index will
+  //   be considered used/required by the vertex format
+  vertex_buffer_bitmask_ |= 1u << buffer_index;
 
   // Advance the current attribute index to the next slot
   current_attrib_index_++;
 
   return *this;
+}
+
+auto GLVertexFormat::usesVertexBuffer(unsigned buf_binding_index) -> bool
+{
+  assert(buf_binding_index < MaxVertexBufferBindings &&
+    "the 'buf_binding_index' must be in the range [0;MaxVertexBufferBindings]");
+
+  auto m = vertex_buffer_bitmask_;
+  return (m >> buf_binding_index) & 1;
+}
+
+GLVertexArray::GLVertexArray() :
+  id_(GLNullObject)
+{
+}
+
+GLVertexArray::GLVertexArray(GLVertexArray&& other) :
+  GLVertexArray()
+{
+  std::swap(id_, other.id_);
+}
+
+GLVertexArray::~GLVertexArray()
+{
+  if(id_ == GLNullObject) return;
+
+  glDeleteVertexArrays(1, &id_);
+}
+
+auto GLVertexArray::id() const -> GLObject
+{
+  return id_;
 }
 
 }

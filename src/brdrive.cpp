@@ -10,6 +10,7 @@
 #include <gx/extensions.h>
 #include <gx/context.h>
 #include <gx/buffer.h>
+#include <gx/vertex.h>
 #include <gx/texture.h>
 #include <gx/program.h>
 #include <x11/x11.h>
@@ -274,10 +275,14 @@ void main()
   gl_program
     .use();
 
-  brdrive::GLObject vertex_array;
-  glGenVertexArrays(1, &vertex_array);
+  brdrive::GLVertexFormat empty_vertex_format;
 
-  glBindVertexArray(vertex_array);
+  auto vertex_array    = empty_vertex_format.createVertexArray();
+  auto vertex_array_id = vertex_array.id();
+
+  // Drawing REQUIRES having a VAO bound to the context,
+  //   so bind an empty one to not cause errors
+  glBindVertexArray(vertex_array_id);
 
   bool running = true;
   while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {
