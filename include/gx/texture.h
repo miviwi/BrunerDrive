@@ -33,6 +33,8 @@ public:
   GLTexture(const GLTexture&) = delete;
   virtual ~GLTexture();
 
+//  auto operator=(GLTexture&& other) -> GLTexture&;
+
   auto id() const -> GLObject;
 
   // Returns a value which informs which of the glTextureSubImage*
@@ -77,6 +79,8 @@ public:
   GLSampler(const GLSampler&) = delete;
   GLSampler(GLSampler&& other);
   ~GLSampler();
+
+//  auto operator=(GLSampler&& other) -> GLSampler&;
 
   auto id() const -> GLObject;
 
