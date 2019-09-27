@@ -7,7 +7,8 @@
 
 namespace brdrive {
 
-// Forward declaration
+// Forward declarations
+class GLVertexArray;
 class GLTexture;
 
 class GLBuffer {

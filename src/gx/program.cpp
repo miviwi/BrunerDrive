@@ -6,6 +6,7 @@
 
 #include <cassert>
 
+#include <regex>
 #include <utility>
 
 namespace brdrive {
@@ -26,7 +27,10 @@ auto Type_to_shaderType(GLShader::Type type) -> GLenum
 GLShader::GLShader(Type type) :
   type_(Type_to_shaderType(type)),
   id_(GLNullObject),
-  compiled_(false)
+  compiled_(false),
+  sources_state_flags_(0),
+  version_(DefaultGLSLVersion),
+  defines_(std::nullopt)
 {
 }
 
@@ -35,6 +39,10 @@ GLShader::GLShader(GLShader&& other) :
 {
   std::swap(id_, other.id_);
   std::swap(compiled_, other.compiled_);
+  std::swap(sources_state_flags_, other.sources_state_flags_);
+  std::swap(version_, other.version_);
+  std::swap(defines_, other.defines_);
+  std::swap(sources_, other.sources_);
 }
 
 GLShader::~GLShader()
@@ -49,9 +57,83 @@ auto GLShader::id() const -> GLObject
   return id_;
 }
 
+auto GLShader::glslVersion(int ver) -> GLShader&
+{
+  // Check if the version is being set for the first time
+  auto version_state = (sources_state_flags_ & VersionStateMask) >> VersionStateShift;
+
+  assert((version_state == VersionStateUseDefault
+        || version_state == VersionStateInhibitDefault
+        || version_state == VersionStateVersionGiven) &&
+      "'sources_state_flags_' contains invalid data!");
+
+  if(version_state != VersionStateUseDefault) throw GLSLVersionRedefinitionError();
+
+  // Now store it...
+  version_ = ver;
+
+  // ...and modify the 'sources_state_flags_' appropriately
+  u32 new_version_state = ~0u;
+  if(ver < 0) {
+    new_version_state = (VersionStateInhibitDefault << VersionStateShift);
+  } else {
+    new_version_state = (VersionStateVersionGiven << VersionStateShift);
+  }
+
+  // Clear old version state data...
+  sources_state_flags_ &= ~VersionStateMask;
+  // ...and fill it with 'new_version_state'
+  sources_state_flags_ |= new_version_state&VersionStateMask;
+
+  return *this;
+}
+
 auto GLShader::source(std::string_view src) -> GLShader&
 {
   sources_.emplace_back(std::move(src));
+
+  // After source text is added - 'sources_state_flags_'
+  //   needs to reflect that define() can no longer
+  //   be used to add text using push_back()
+  constexpr u32 new_defines_state = (DefinesStateInsertingRequired << DefinesStateShift);
+  sources_state_flags_ |= (new_defines_state & DefinesStateMask);
+
+  return *this;
+}
+
+static const std::regex g_define_identifier_re("^[a-zA-Z_]([a-zA-Z0-9_])*$", std::regex::optimize);
+auto GLShader::define(const char *identifier, const char *value) -> GLShader&
+{
+  // Validate the identifier
+  if(!std::regex_match(identifier, g_define_identifier_re)) throw InvalidDefineIdentifierError();
+
+  char define_text_buf[256];
+  int num_printed = snprintf(define_text_buf, sizeof(define_text_buf),
+      "#define %s %s\n",
+      identifier, value ? value : ""
+  );
+
+  assert((num_printed > 0 && num_printed < sizeof(define_text_buf)) &&
+      "buffer for sprintf() in GLShader::define() is too small!");
+
+  std::string define_text(define_text_buf, num_printed);
+
+  auto& defines_vector = ([this]() -> std::vector<std::string>&
+  {
+    // Create the std::vector
+    if(!defines_) defines_.emplace();
+
+    return defines_.value();
+  })();
+
+  u32 defines_state = (sources_state_flags_ & DefinesStateMask) >> DefinesStateShift;
+  if(defines_state != DefinesStateInsertingRequired) {
+    // No sources were added so push_back() can be used
+    //   to append the text, which saves on performance
+    defines_vector.emplace_back(std::move(define_text));
+  } else {     // Have to use insert
+    defines_vector.emplace(defines_vector.begin(), std::move(define_text));
+  }
 
   return *this;
 }
@@ -64,13 +146,45 @@ auto GLShader::compile() -> GLShader&
   // Lazily allocate the shader object
   id_ = glCreateShader(type_);
 
-  auto num_sources = (GLsizei)sources_.size();
+  auto version_string_state = (sources_state_flags_ & VersionStateMask) >> VersionStateShift;
+  GLSize has_version_string = (version_string_state == VersionStateInhibitDefault) ? 0 : 1;
+
+  GLSize num_defines = defines_.has_value() ? (GLSize)defines_->size() : 0;
+
+  auto num_sources = has_version_string + num_defines + (GLSize)sources_.size();
 
   std::vector<const GLchar *> source_strings;
   std::vector<int> source_lengths;
 
-  source_strings.reserve(sources_.size());
-  source_lengths.reserve(sources_.size());
+  source_strings.reserve(num_sources);
+  source_lengths.reserve(num_sources);
+
+  // First add the #version string (if needed)
+  std::string version_string;   // Define here so it doesn't go out of scope prematurely
+  if(has_version_string) {
+    char version_string_buf[64];
+    int num_printed = snprintf(version_string_buf, sizeof(version_string_buf),
+        "#version %d\n\n",
+        version_);
+
+    assert((num_printed > 0 && num_printed < sizeof(version_string_buf)) &&
+        "the sprintf() for the #version directive didn't fit in the buffer!");
+
+    version_string.assign(version_string_buf, num_printed);
+
+    source_strings.push_back((const GLchar *)version_string.data());
+    source_lengths.push_back((int)version_string.size());
+  }
+
+  // Next - the #defines
+  for(size_t i = 0; i < num_defines; i++) {
+    const auto& define_string = defines_->at(i);
+
+    source_strings.push_back((const GLchar *)define_string.data());
+    source_lengths.push_back((int)define_string.size());
+  }
+
+  // And lastly the sources
   for(const auto& v : sources_) {
     source_strings.push_back((const GLchar *)v.data());
     source_lengths.push_back((int)v.size());

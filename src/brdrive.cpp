@@ -114,8 +114,11 @@ int main(int argc, char *argv[])
   brdrive::GLShader vert(brdrive::GLShader::Vertex);
   brdrive::GLShader frag(brdrive::GLShader::Fragment);
 
-  vert.source(R"VERT(
-#version 330
+  vert
+    .glslVersion(330)
+    .define("DEF_BEFORE_SOURCE")
+    .source(R"VERT(
+layout(location = 0) in vec3 viColor;
 
 out Vertex {
   vec3 ScreenPosition;
@@ -129,31 +132,23 @@ const vec4 Positions[4] = vec4[](
   vec4(+1.0f, +1.0f, 0.1f, 1.0f)
 );
 
-const vec3 Colors[4] = vec3[](
-  vec3(1.0f, 0.0f, 0.0f),
-  vec3(1.0f, 1.0f, 0.0f),
-  vec3(0.0f, 0.5f, 1.0f),
-  vec3(0.5f, 0.0f, 0.8f)
-);
+const float ScreenAspect = 16.0f/9.0f;
 
 void main()
 {
-  vec4 pos   = Positions[gl_VertexID];
-  vec3 color = Colors[gl_VertexID];
-
-  const float ScreenAspect = 16.0f/9.0f;
+  vec4 pos = Positions[gl_VertexID];
   vec3 screen_pos = vec3(pos.x * ScreenAspect, pos.yz);
 
   vo.ScreenPosition = screen_pos;
-  vo.Color = color;
+  vo.Color = viColor;
 
   gl_Position = pos;
 }
-)VERT");
+)VERT")
+  .define("DEF_AFTER_SOURCE")
+  ;
 
   frag.source(R"FRAG(
-#version 330
-
 in Vertex {
   vec3 ScreenPosition;
   vec3 Color;
@@ -196,9 +191,11 @@ void main()
   const vec3 Black  = vec3(0.0f, 0.0f, 0.0f);
   const vec3 White  = vec3(1.0f, 1.0f, 1.0f);
 
-  foFragColor = circle(Radius, Yellow, LBlue);
+//  foFragColor = circle(Radius, Yellow, LBlue);
 
 //  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
+
+  foFragColor = fi.Color;
 }
 )FRAG");
 
@@ -275,14 +272,35 @@ void main()
   gl_program
     .use();
 
-  brdrive::GLVertexFormat empty_vertex_format;
+  brdrive::GLVertexFormat color_vertex_format;
 
-  auto vertex_array    = empty_vertex_format.createVertexArray();
-  auto vertex_array_id = vertex_array.id();
+  constexpr brdrive::GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(brdrive::u8);
+  const brdrive::u8 ColorsData[
+      4 /* num vertices */ * (3 /* num components (R,G,B) per vertex */ + 1 /* padding */)
+  ] = {
+      0xFF, 0x00, 0x00, /* padding byte */ 0x00,
+      0xFF, 0xFF, 0x00, /* padding byte */ 0x00,
+      0x00, 0x80, 0xFF, /* padding byte */ 0x00,
+      0x80, 0x00, 0xCC, /* padding byte */ 0x00,
+  };
 
-  // Drawing REQUIRES having a VAO bound to the context,
-  //   so bind an empty one to not cause errors
-  glBindVertexArray(vertex_array_id);
+  brdrive::GLVertexBuffer color_data_buf;
+  color_data_buf
+    .alloc(ColorsDataSize, brdrive::GLBuffer::StaticDraw, ColorsData);
+
+  printf("(empty)color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
+
+  color_vertex_format
+    .attr(0, 3, brdrive::GLType::u8, 0)
+    .padding(sizeof(brdrive::u8));   // Pad data for vertices on 4-byte boundaries
+
+  printf("color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
+
+  auto vertex_array = color_vertex_format.createVertexArray();
+
+  vertex_array
+    .bindVertexBuffer(0, color_data_buf, color_vertex_format.vertexByteSize())
+    .bind();
 
   bool running = true;
   while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {

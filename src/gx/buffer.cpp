@@ -1,5 +1,6 @@
 #include <gx/buffer.h>
 #include <gx/extensions.h>
+#include <gx/vertex.h>
 #include <gx/texture.h>
 
 // OpenGL/gl3w
