@@ -27,6 +27,11 @@ struct GLVertexFormatAttr {
   unsigned offset;
 
   auto attrByteSize() const -> GLSize;
+
+  // A helper method for creating the 'pointer'
+  //   parameter for the glVertexAttrib*Pointer()
+  //   family of functions
+  auto offsetAsPtr() const -> const void *;
 };
 
 class GLVertexFormat {
@@ -60,8 +65,8 @@ public:
 //  GLVertexFormat(const GLVertexFormat&) = delete;
 //  GLVertexFormat(GLVertexFormat&& other);
 
-  // Attribute exposed as single precision (32-bit) floating
-  //   point number(s) -> float/vec2/vec3/vec4 in shaders
+  // Append an attribute exposed as a single precision (32-bit)
+  //   floating point number/vector -> float/vec2/vec3/vec4 to GLSL shaders
   //  - The attribute indices are assigned sequantially
   //    starting at 0
   auto attr(
@@ -69,17 +74,20 @@ public:
       unsigned offset, AttrType attr_type = GLVertexFormatAttr::Normalized
     ) -> GLVertexFormat&;
 
-  // Attribute exposed as (32-bit) integer(s) ->
-  //   int/ievc2/ivec3/ivec4 in shaders
+  // Append an attribute exposed as a (32-bit) integer/vector
+  //   of integers -> int/ievc2/ivec3/ivec4 in shaders
   //  - The attribute indices are assigned sequantially
   //    starting at 0
   auto iattr(
       unsigned buffer_index, int size, GLType type, unsigned offset
     ) -> GLVertexFormat&;
 
+  // Create a new vertex array according to all
+  //   recorded attributes and their formats
   auto createVertexArray() const -> GLVertexArray;
 
 private:
+  //     returns -> attributes_.at(current_attrib_index_)
   auto currentAttrSlot() -> GLVertexFormatAttr&;
 
   // If the currentAttrSlot() (with index current_attrib_index_)
@@ -101,6 +109,12 @@ private:
   //       as that attribute's data source
   auto usesVertexBuffer(unsigned buf_binding_index) -> bool;
 
+  // createVertexArray() implementation for the ARB_vertex_attrib_binding path
+  auto createVertexArray_vertex_attrib_binding() const -> GLVertexArray;
+  // createVertexArray() implementation for fallback path - platforms which
+  //   only support ARB_vertex_array_object
+  auto createVertexArray_vertex_array_object() const -> GLVertexArray;
+
   unsigned current_attrib_index_;
   std::array<GLVertexFormatAttr, MaxVertexBufferBindings> attributes_;
 
@@ -119,6 +133,12 @@ public:
 
   auto id() const -> GLObject;
 
+  // Bind this vertex array to the OpenGL context,
+  //   so it will be used in subsequent draw calls
+  //   until a bind() call on another vertex array
+  //   is made
+  auto bind() -> GLVertexArray&;
+
 private:
   friend GLVertexFormat;
 
@@ -131,5 +151,12 @@ private:
 
   GLObject id_;
 };
+
+namespace vertex_format_detail {
+  enum CreateVertexArrayPath {
+    Path_vertex_attrib_binding,
+    Path_vertex_array_object,
+  };
+}
 
 }
