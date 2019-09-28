@@ -12,7 +12,8 @@
 
 namespace brdrive {
 
-inline constexpr auto GLType_to_type(GLType type) -> GLEnum
+[[using gnu: always_inline]]
+static constexpr auto GLType_to_type(GLType type) -> GLEnum
 {
   switch(type) {
   case GLType::u8:  return GL_UNSIGNED_BYTE;
@@ -37,7 +38,8 @@ inline constexpr auto GLType_to_type(GLType type) -> GLEnum
 //   - NOTE: there ARE however exceptions to this (detailed
 //           in the comment to the fuction type_is_packed(),
 //           found below)
-inline constexpr auto sizeof_type_GLenum(GLEnum type) -> GLSize
+[[using gnu: always_inline]]
+static constexpr auto sizeof_type_GLenum(GLEnum type) -> GLSize
 { 
   switch(type) {
   // Integer-valued types
@@ -71,7 +73,8 @@ inline constexpr auto sizeof_type_GLenum(GLEnum type) -> GLSize
 //   attribute the value of sizeof_type_GLenum() must NOT
 //   be multiplied by the number of components (stored
 //   as GLVertexFormatAttr::size)
-inline constexpr auto type_is_packed(GLEnum type) -> bool
+[[using gnu: always_inline]]
+static constexpr auto type_is_packed(GLEnum type) -> bool
 {
   switch(type) {
   case GL_INT_2_10_10_10_REV:
@@ -120,27 +123,31 @@ auto GLVertexFormatAttr::normalized() const -> bool
 
 GLVertexFormat::GLVertexFormat() :
   current_attrib_index_(0),
-  vertex_buffer_bitmask_(0),
+  vertex_buffer_bitfield_(0),
   padding_bytes_(0),
   cached_vertex_size_(std::nullopt)
 {
 }
 
 auto GLVertexFormat::attr(
-    unsigned buffer_index, int size, GLType type, unsigned offset, AttrType attr_type
+    unsigned buffer_index, int num_components, GLType type, GLSize offset_, AttrType attr_type
   ) -> GLVertexFormat&
 {
   assert((attr_type == AttrType::Normalized) || (attr_type == AttrType::UnNormalized) 
       && "invalid AttryType (GLVertexFormatAttr::Type) passed to attr()!");
 
-  return appendAttr(buffer_index, size, type, offset, attr_type);
+  GLSize offset = offset_ < 0 ? vertexByteSize() : offset_;
+
+  return appendAttr(buffer_index, num_components, type, offset, attr_type);
 }
 
 auto GLVertexFormat::iattr(
-    unsigned buffer_index, int size, GLType type, unsigned offset
+    unsigned buffer_index, int num_components, GLType type, GLSize offset_
   ) -> GLVertexFormat&
 {
-   return appendAttr(buffer_index, size, type, offset, AttrType::Integer);
+  GLSize offset = offset_ < 0 ? vertexByteSize() : offset_;
+
+   return appendAttr(buffer_index, num_components, type, offset, AttrType::Integer);
 }
 
 auto GLVertexFormat::padding(GLSize padding_bytes) -> GLVertexFormat&
@@ -203,10 +210,46 @@ auto GLVertexFormat::vertexByteSize() const -> GLSize
   return vertex_size;
 }
 
+auto GLVertexFormat::bindVertexBuffer(
+    unsigned index, const GLVertexBuffer& vertex_buffer, GLSize stride_, GLSize offset
+  ) -> GLVertexFormat&
+{
+  if(index >= MaxVertexBufferBindings) throw VertexBufferBindingIndexOutOfRangeError();
+
+  assert(vertex_buffer.id() != GLNullObject &&
+      "attempted to bind a null GLVertexBuffer to a vertex array binding slot!");
+  assert(index < GLVertexFormat::MaxVertexBufferBindings &&
+      "the index exceedes the maximum alowed number of vertex buffer bindings!");
+
+  // GLSize is a signed type - so ensure the offset isn't negative
+  assert(offset >= 0);
+
+  // 'stride_' is an optional parameter to reduce having to type
+  //   redundant code (the assumption is - in most cases the
+  //   layout of the attribute data will be interleaved)
+  GLSize stride = (stride_ < 0) ? vertexByteSize() : stride_;
+  if(stride > GLVertexFormat::MaxVertexAttribStride) throw StrideExceedesMaxAllowedError();
+
+  // Fill in internal data structures
+  buffers_.at(index) = GLVertexFormatBuffer {
+      vertex_buffer.id(),
+      stride, offset,
+  };
+
+  //  - Mark the binding slot at 'index' as having a buffer bound
+  bound_vertex_buffer_bitfield_ |= 1<<index;
+
+  return *this;
+}
+
 auto GLVertexFormat::createVertexArray() const -> GLVertexArray
 {
   // Perform some validation...
   if(vertexByteSize() > MaxVertexSize) throw VertexExceedesMaxSizeError();
+
+  auto bound_required_buffer_bitfield = bound_vertex_buffer_bitfield_ & vertex_buffer_bitfield_;
+  if(bound_vertex_buffer_bitfield_ != bound_required_buffer_bitfield)
+    throw AttribWithoutBoundVertexBufferError();
 
   // ...and actually create the array:
   //   - Use the ARB_vertex_attrib_binding extension path if it's available...
@@ -238,18 +281,17 @@ auto GLVertexFormat::nextAttrSlotIndex() -> unsigned
 }
 
 auto GLVertexFormat::appendAttr(
-    unsigned buffer_index, int size, GLType type, unsigned offset, AttrType attr_type
+    unsigned buffer_index, int num_components, GLType type, GLSize offset, AttrType attr_type
   ) -> GLVertexFormat&
 {
   // Find a free attribute slot index
   auto attr_slot_idx = nextAttrSlotIndex();
-  auto& attr_slot = attributes_.at(attr_slot_idx);
 
    // Ensure 'buffer_index' is in the allowable range...
   if(buffer_index >= MaxVertexBufferBindings) throw VertexBufferBindingIndexOutOfRangeError();
 
   // ...as well as the 'size' (number of components)...
-  if(size < 1 || size > 4) throw InvalidNumberOfComponentsError();
+  if(num_components < 1 || num_components > 4) throw InvalidNumberOfComponentsError();
 
   // ...and the offset as well
   if(offset >= MaxVertexAttribRelativeOffset) throw VerterAttribOffsetOutOfRangeError();
@@ -259,17 +301,17 @@ auto GLVertexFormat::appendAttr(
   if(gl_type == GL_INVALID_ENUM) throw InvalidAttribTypeError();
 
   // Save the attribute's properties to an internal data structure
-  attr_slot = GLVertexFormatAttr {
+  attributes_.at(attr_slot_idx) = GLVertexFormatAttr {
     attr_type,
 
     buffer_index,
-    size, gl_type, offset,
+    num_components, gl_type, offset,
   };
 
   // Mark the bit corresponding to 'buffer_index' in
-  //   the 'vertex_buffer_bitmask_' so this index will
+  //   the 'vertex_buffer_bitfield_' so this index will
   //   be considered used/required by the vertex format
-  vertex_buffer_bitmask_ |= 1u << buffer_index;
+  vertex_buffer_bitfield_ |= 1u << buffer_index;
 
   // Advance the current attribute index to the next slot
   current_attrib_index_++;
@@ -285,7 +327,7 @@ auto GLVertexFormat::usesVertexBuffer(unsigned buf_binding_index) -> bool
   assert(buf_binding_index < MaxVertexBufferBindings &&
     "the 'buf_binding_index' must be in the range [0;MaxVertexBufferBindings]");
 
-  auto m = vertex_buffer_bitmask_;
+  auto m = vertex_buffer_bitfield_;
   return (m >> buf_binding_index) & 1;
 }
 
@@ -301,7 +343,8 @@ auto GLVertexFormat::usesVertexBuffer(unsigned buf_binding_index) -> bool
 //       <ARB,EXT>_direct_state_access are available (runtime
 //       check) and uses optimized code paths
 template <vertex_format_detail::CreateVertexArrayPath CreatePath>
-inline auto createVertexArrayGeneric_impl(
+auto createVertexArrayGeneric_impl(
+    const std::array<GLVertexFormatBuffer, GLVertexFormat::MaxVertexBufferBindings>& buffers,
     const std::array<GLVertexFormatAttr, GLVertexFormat::MaxVertexAttribs>& attribs
   ) -> GLObject
 {
@@ -318,15 +361,18 @@ inline auto createVertexArrayGeneric_impl(
   // The format_vertex_attrib_binding, format_vertex_array_object
   //   lambdas exist to make the attribute iteration loop tidier
 
+  // Before calling this function (with dsa_path == false) make SURE that:
+  //   - The proper (i.e. of id=='vertex_array') vertex array
+  //     is bound to the context
   const auto format_vertex_attrib_binding = [=](
-      GLObject vertex_array, size_t attr_idx, const GLVertexFormatAttr& attr
+      GLObject vertex_array, size_t attr_idx,
+      const GLVertexFormatAttr& attr, const GLVertexFormatBuffer& buffer
   ) {
     // Setup the attribute's format
     if(attr.attr_type == GLVertexFormatAttr::Integer) {
       if(dsa_path) {
         glVertexArrayAttribIFormat(
-            vertex_array, attr_idx, attr.num_components,
-            attr.type, attr.offset
+            vertex_array, attr_idx, attr.num_components, attr.type, attr.offset
         );
       } else {
         glVertexAttribIFormat(attr_idx, attr.num_components, attr.type, attr.offset);
@@ -338,37 +384,48 @@ inline auto createVertexArrayGeneric_impl(
 
       if(dsa_path) {
         glVertexArrayAttribFormat(
-            vertex_array, attr_idx, attr.num_components, attr.type,
-            normalized, attr.offset
+            vertex_array, attr_idx, attr.num_components, attr.type, normalized, attr.offset
         );
       } else {
         glVertexAttribFormat(
-            attr_idx, attr.num_components,
-            attr.type, normalized, attr.offset
+            attr_idx, attr.num_components, attr.type, normalized, attr.offset
         );
       }
     }
 
-    // Set the binding point to where the vertex buffer which holds the data is bound
-    if constexpr(CreatePath == vertex_format_detail::Path_vertex_attrib_binding) {
-      if(dsa_path) {
-        glVertexArrayAttribBinding(vertex_array, attr_idx, attr.buffer_index);
-      } else {
-        glVertexAttribBinding(vertex_array, attr.buffer_index);
-      }
+    // Set the binding point to where the vertex buffer which holds the data
+    //   will be bound nad actually bind it
+    if(dsa_path) {
+      glVertexArrayAttribBinding(vertex_array, attr_idx, attr.buffer_index);
+
+      // Bind the backing buffer
+      glVertexArrayVertexBuffer(vertex_array, attr.buffer_index,
+          buffer.bufferid, buffer.offset, buffer.stride);
+    } else {
+      glVertexAttribBinding(vertex_array, attr.buffer_index);
+
+      // Bind the backing buffer
+      glBindVertexBuffer(attr.buffer_index, buffer.bufferid, buffer.offset, buffer.stride);
     }
   };
 
+  // Before calling this function (no matter if going through
+  //  the DSA path or not) make SURE that:
+  //   - The proper (i.e. of id=='vertex_array') vertex array
+  //     is bound to the context
+  //   - The desired VBO (i.e. one with id==bufer.bufferid)
+  //     is bound to the context as well
   const auto format_vertex_array_object = [=](
-      GLObject vertex_array, size_t attr_idx, const GLVertexFormatAttr& attr
+      GLObject vertex_array, size_t attr_idx,
+      const GLVertexFormatAttr& attr, const GLVertexFormatBuffer& buffer
   ) {
-    auto off = attr.offsetAsPtr();
+    // Compute the proper (cummulative) offset of the attribute's data
+    auto off = (const void *)(uintptr_t)(buffer.offset + attr.offset);
 
     // Setup the attribute's format
     if(attr.attr_type == GLVertexFormatAttr::Integer) {
       glVertexAttribIPointer(
-          attr_idx, attr.num_components, attr.type, 0 /* TODO: pass proper stride here */,
-          off /* TODO: attr.offset is relative, need to convert it to a cummulative one */
+          attr_idx, attr.num_components, attr.type, buffer.stride, off
       );
     } else {
       // Check if the non-floating point data should be normalized
@@ -376,16 +433,14 @@ inline auto createVertexArrayGeneric_impl(
       GLboolean normalized = attr.normalized();
 
       glVertexAttribPointer(
-          attr_idx, attr.num_components, attr.type, normalized,
-          0, /* TODO: same as above - pass proper stride */
-          off /* TODO: use cummulative offset instead of the stored (i.e. relative) one */
+          attr_idx, attr.num_components, attr.type, normalized, buffer.stride, off
       );
     }
   };
 
   // ------------------------------------------------------------
 
-  // Create the vertex array
+  // Create the vertex array (and bind it if required)
   GLObject vertex_array = -1;
   if(dsa_path) {
     glCreateVertexArrays(1, &vertex_array);
@@ -400,23 +455,30 @@ inline auto createVertexArrayGeneric_impl(
     // Don't process empty (unused) attribute slots
     if(attr.attr_type == GLVertexFormatAttr::AttrInvalid) continue;
 
-    // Found a used attribute slot!
+    const auto& vertex_buffer = buffers.at(attr.buffer_index);
+    assert(vertex_buffer.bufferid != GLNullObject);
+
+    // Found an unused attribute slot!
+    //   - If ARB_vertex_attrib_binding is unavailable -
+    //     bind the desired VBO to the context
     //   - Enable it in the VertexArray
     if(dsa_path) {
       glEnableVertexArrayAttrib(vertex_array, attr_idx);
     } else {
+      glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer.bufferid);
+
       glEnableVertexAttribArray(attr_idx);
     }
 
-    // - Setup it's format
+    // - Setup the format
     //  -> Using a compile-time if statement we reduce code repetition AND slightly
     //     improve performance, whereas all other methods would sacrifice one or the
     //     other. Thanks C++17 :)
     //  -> The format_vertex_* functions are lambdas defined above the loop
     if constexpr(CreatePath == vertex_format_detail::Path_vertex_attrib_binding) {
-      format_vertex_attrib_binding(vertex_array, attr_idx, attr);
+      format_vertex_attrib_binding(vertex_array, attr_idx, attr, vertex_buffer);
     } else if(CreatePath == vertex_format_detail::Path_vertex_array_object) {
-      format_vertex_array_object(vertex_array, attr_idx, attr);
+      format_vertex_array_object(vertex_array, attr_idx, attr, vertex_buffer);
     }
 
     // Make sure no error(s) have occured
@@ -435,10 +497,14 @@ inline auto createVertexArrayGeneric_impl(
 auto GLVertexFormat::createVertexArray_vertex_attrib_binding() const -> GLVertexArray
 {
   constexpr auto create_path = vertex_format_detail::Path_vertex_attrib_binding;
-  auto arrayid = createVertexArrayGeneric_impl<create_path>(attributes_);
+  auto arrayid = createVertexArrayGeneric_impl<create_path>(buffers_, attributes_);
 
   GLVertexArray array;
   array.id_ = arrayid;
+  
+  // Purge the attrib slot vertex buffer binding data
+  std::fill(buffers_.begin(), buffers_.end(), GLVertexFormatBuffer());
+  bound_vertex_buffer_bitfield_ = 0;
     
   return std::move(array);
 }
@@ -446,17 +512,33 @@ auto GLVertexFormat::createVertexArray_vertex_attrib_binding() const -> GLVertex
 auto GLVertexFormat::createVertexArray_vertex_array_object() const -> GLVertexArray
 {
   constexpr auto create_path = vertex_format_detail::Path_vertex_array_object;
-  auto arrayid = createVertexArrayGeneric_impl<create_path>(attributes_);
+  auto arrayid = createVertexArrayGeneric_impl<create_path>(buffers_, attributes_);
 
   GLVertexArray array;
   array.id_ = arrayid;
-    
+
+  // Purge the attrib slot vertex buffer binding data
+  std::fill(buffers_.begin(), buffers_.end(), GLVertexFormatBuffer());
+  bound_vertex_buffer_bitfield_ = 0;
+
   return std::move(array);
 }
 
 void GLVertexFormat::invalidateCachedVertexSize()
 {
   cached_vertex_size_ = std::nullopt;
+}
+
+void GLVertexFormat::dbg_ForceVertexArrayCreatePath(int path)
+{
+  // For easy vertex_format_detail::CreateVertexArrayPath's values access
+  using namespace vertex_format_detail;
+
+  assert((path == Path_vertex_attrib_binding || path == Path_vertex_array_object) &&
+      "invalid value specified for path! (see vertex_format_detail::CreateVertexArrayPath"
+      " for possible values)");
+
+  dbg_forced_va_create_path_ = path;
 }
 
 GLVertexArray::GLVertexArray() :
@@ -482,6 +564,7 @@ auto GLVertexArray::id() const -> GLObject
   return id_;
 }
 
+#if 0
 auto GLVertexArray::bindVertexBuffer(
     unsigned index, const GLVertexBuffer& vertex_buffer,
     GLSize stride, GLSize offset
@@ -518,6 +601,7 @@ auto GLVertexArray::bindVertexBuffer(
 
   return *this;
 }
+#endif
 
 auto GLVertexArray::bind() -> GLVertexArray&
 {

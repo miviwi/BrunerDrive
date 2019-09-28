@@ -34,7 +34,7 @@
 #include <unordered_map>
 #include <optional>
 
-auto load_font(const std::string& file_name) -> std::optional<std::vector<brdrive::u8>>
+auto load_font(const std::string& file_name) -> std::optional<std::vector<uint8_t>>
 {
   auto fd = open(file_name.data(), O_RDONLY);
   if(fd < 0) return std::nullopt;
@@ -42,7 +42,7 @@ auto load_font(const std::string& file_name) -> std::optional<std::vector<brdriv
   struct stat st;
   if(fstat(fd, &st) < 0) return std::nullopt;
 
-  std::vector<brdrive::u8> font(st.st_size);
+  std::vector<uint8_t> font(st.st_size);
   if(read(fd, font.data(), font.size()) < 0) {
     close(fd);
     return std::nullopt;
@@ -52,14 +52,14 @@ auto load_font(const std::string& file_name) -> std::optional<std::vector<brdriv
   return std::move(font);
 }
 
-auto expand_1bpp_to_8bpp(const std::vector<brdrive::u8>& font) -> std::vector<brdrive::u8>
+auto expand_1bpp_to_8bpp(const std::vector<uint8_t>& font) -> std::vector<uint8_t>
 {
-  std::vector<brdrive::u8> expanded;
+  std::vector<uint8_t> expanded;
   expanded.reserve(font.size() * 8);
 
   for(auto b : font) {
     for(int i = 0; i < 8; i++) {
-      brdrive::u8 pixel = (b >> 7)*0xFF;
+      uint8_t pixel = (b >> 7)*0xFF;
 
       expanded.push_back(pixel);
       b <<= 1;
@@ -238,6 +238,7 @@ void main()
     .uniform("usOSD", 0);
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
   glClear(GL_COLOR_BUFFER_BIT);
@@ -274,8 +275,8 @@ void main()
 
   brdrive::GLVertexFormat color_vertex_format;
 
-  constexpr brdrive::GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(brdrive::u8);
-  const brdrive::u8 ColorsData[
+  constexpr brdrive::GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(uint8_t);
+  const uint8_t ColorsData[
       4 /* num vertices */ * (3 /* num components (R,G,B) per vertex */ + 1 /* padding */)
   ] = {
       0xFF, 0x00, 0x00, /* padding byte */ 0x00,
@@ -292,16 +293,17 @@ void main()
 
   color_vertex_format
     .attr(0, 3, brdrive::GLType::u8, 0)
-    .padding(sizeof(brdrive::u8));   // Pad data for vertices on 4-byte boundaries
+    .padding(sizeof(uint8_t));   // Pad data for vertices on 4-byte boundaries
 
   printf("color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
 
-  auto vertex_array = color_vertex_format.createVertexArray();
+  auto vertex_array = color_vertex_format
+    .bindVertexBuffer(0, color_data_buf)
+    .createVertexArray();
 
   vertex_array
-    .bindVertexBuffer(0, color_data_buf, color_vertex_format.vertexByteSize())
     .bind();
-
+  
   bool running = true;
   while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {
     switch(ev->type()) {

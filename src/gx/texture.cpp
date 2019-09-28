@@ -11,7 +11,8 @@
 
 namespace brdrive {
 
-inline constexpr auto bind_target_to_Dimensions(GLEnum bind_target) -> GLTexture::Dimensions
+[[using gnu: always_inline]]
+static constexpr auto bind_target_to_Dimensions(GLEnum bind_target) -> GLTexture::Dimensions
 {
   switch(bind_target) {
   case GL_TEXTURE_1D:
@@ -41,7 +42,8 @@ inline constexpr auto bind_target_to_Dimensions(GLEnum bind_target) -> GLTexture
   return GLTexture::DimensionsInvalid;
 }
 
-inline constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
+[[using gnu: always_inline]]
+static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
 {
   switch(format) {
   case r:     return GL_RED;
@@ -57,12 +59,13 @@ inline constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case r16f:  return GL_R16F;
   case rg16f: return GL_RG16F;
 
-  case depth:         return GL_DEPTH_COMPONENT;
-  case depth_stencil: return GL_DEPTH_STENCIL;
-
+  case depth:    return GL_DEPTH_COMPONENT;
   case depth16:  return GL_DEPTH_COMPONENT16;
   case depth24:  return GL_DEPTH_COMPONENT24;
   case depth32f: return GL_DEPTH_COMPONENT32F;
+
+  case depth_stencil:    return GL_DEPTH_STENCIL;
+  case depth24_stencil8: return GL_DEPTH24_STENCIL8;
 
   default: ;         // Fallthrough (silence warnings)
   }
@@ -70,7 +73,8 @@ inline constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   return GL_INVALID_ENUM;
 }
 
-inline constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
+[[using gnu: always_inline]]
+static constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
 {
   switch(format) {
   case r:    return GL_RED;
@@ -87,7 +91,8 @@ inline constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
   return GL_INVALID_ENUM;
 }
 
-inline constexpr auto GLType_to_type(GLType type) -> GLenum
+[[using gnu: always_inline]]
+static constexpr auto GLType_to_type(GLType type) -> GLenum
 {
   switch(type) {
   case GLType::u8:  return GL_UNSIGNED_BYTE;
@@ -101,6 +106,9 @@ inline constexpr auto GLType_to_type(GLType type) -> GLenum
   case GLType::u16_1555r: return GL_UNSIGNED_SHORT_1_5_5_5_REV;
 
   case GLType::f32: return GL_FLOAT;
+
+  case GLType::u32_24_8:      return GL_UNSIGNED_INT_24_8;
+  case GLType::f32_u32_24_8r: return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
 
   default: ;     // Fallthrough (silence warnings)
   }

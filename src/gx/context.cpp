@@ -12,7 +12,7 @@
 
 namespace brdrive {
 
-static void MessageCallback(
+static void dbg_message_callback(
     GLenum source, GLenum type, GLuint id, GLenum severity,
     GLsizei length, const GLchar* message, const void* userParam
   )
@@ -64,7 +64,7 @@ auto GLContext::dbg_EnableMessages() -> GLContext&
   glEnable(GL_DEBUG_OUTPUT);
   glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
-  glDebugMessageCallback(MessageCallback, nullptr);
+  glDebugMessageCallback(dbg_message_callback, nullptr);
 
   return *this;
 }

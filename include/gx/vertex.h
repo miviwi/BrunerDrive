@@ -25,8 +25,10 @@ struct GLVertexFormatAttr {
 
   unsigned buffer_index; // The 'bindingindex' which will be passed to glVertexAttribBinding()
   GLSize num_components; // MUST be in the range [1;4]
-  GLEnum type; // Stores the OpenGL Glenum representation of the attribute's GLType
-  unsigned offset;
+  GLEnum type; // Stores the OpenGL GLenum representation of the attribute's GLType
+  GLSize offset;   // The offset of this attribute's data RELATIVE to the offset
+                   //   specified for the backing vertex buffer. So:
+                   //       <data offset> = <GLVertexFormatBuffer.offset> + <offset>
 
   auto attrByteSize() const -> GLSize;
 
@@ -108,6 +110,20 @@ public:
     { }
   };
 
+  struct AttribWithoutBoundVertexBufferError : public std::runtime_error {
+    AttribWithoutBoundVertexBufferError() :
+      std::runtime_error("not all vertex buffer binding slots referenced by vertex attributes"
+          " have a vertex buffer bound!")
+    { }
+  };
+
+  struct StrideExceedesMaxAllowedError : public std::runtime_error {
+    StrideExceedesMaxAllowedError() :
+      std::runtime_error("the 'stride' for vertex buffer attribute data CANNOT"
+          " be > than GLVertexFormat::MaxVertexAttribStride!")
+    { }
+  };
+
   GLVertexFormat();
 //  GLVertexFormat(const GLVertexFormat&) = delete;
 //  GLVertexFormat(GLVertexFormat&& other);
@@ -116,17 +132,23 @@ public:
   //   floating point number/vector -> float/vec2/vec3/vec4 to GLSL shaders
   //  - The attribute indices are assigned sequantially
   //    starting at 0
+  //  - When 'offset' isn't passed explicitly, then - the size of
+  //    all attributes added before this call (vertexByteSize() is
+  //    used to compute it) is used
   auto attr(
-      unsigned buffer_index, int size, GLType type,
-      unsigned offset, AttrType attr_type = GLVertexFormatAttr::Normalized
+      unsigned buffer_index, int num_components, GLType type,
+      GLSize offset = -1, AttrType attr_type = GLVertexFormatAttr::Normalized
     ) -> GLVertexFormat&;
 
   // Append an attribute exposed as a (32-bit) integer/vector
   //   of integers -> int/ievc2/ivec3/ivec4 in shaders
   //  - The attribute indices are assigned sequantially
   //    starting at 0
+  //  - When 'offset' isn't passed explicitly, then - the size of
+  //    all attributes added before this call (vertexByteSize() is
+  //    used to compute it) is used
   auto iattr(
-      unsigned buffer_index, int size, GLType type, unsigned offset
+      unsigned buffer_index, int num_components, GLType type, GLSize offset = -1
     ) -> GLVertexFormat&;
 
   // Adds 'padding_bytes' of padding to the end of the format's
@@ -139,9 +161,29 @@ public:
   //   attributes - increasing size)
   auto vertexByteSize() const -> GLSize;
 
+  // 'index' corresponds to GLVertexFormatAttrib::buffer_index
+  auto bindVertexBuffer(
+      unsigned index, const GLVertexBuffer& vertex_buffer,
+      GLSize stride = -1, GLSize offset = 0
+    ) -> GLVertexFormat&;
+
   // Create a new vertex array according to all
   //   recorded attributes and their formats
+  //  - All the vertex buffer binding points referenced by
+  //    attributes MUST have buffers bound before calling
+  //    this method! (strictly speaking - only because
+  //    the ARB_vertex_array_object code path requires it,
+  //    but in the name of homogenity this is enforced
+  //    as a requirement)
+  //  - After the method returns the stored vertex buffer
+  //    bindings (ones internal to this GLVertexFormat)
+  //    are cleared, this is done to make creating multiple
+  //    vertex arrays from a single GLVertexFormat instance
+  //    possible
   auto createVertexArray() const -> GLVertexArray;
+
+  // Must be called BEFORE createVertexArray() to take effect
+  void dbg_ForceVertexArrayCreatePath(int path);
 
 private:
   using AttributeArray = std::array<GLVertexFormatAttr, MaxVertexAttribs>;
@@ -160,7 +202,7 @@ private:
 
   // Add the desired vertex attribute at the next free index
   auto appendAttr(
-      unsigned buffer_index, int size, GLType type, unsigned offset, AttrType attr_type
+      unsigned buffer_index, int num_components, GLType type, GLSize offset, AttrType attr_type
     ) -> GLVertexFormat&;
 
   // Returns 'true' if any call made to [i]attr() matched
@@ -185,9 +227,29 @@ private:
   //   which are referenced by the attributes
   //  - The LSB's state represents the allocation state of
   //    'bindingindex' 0, the MSB's - of the 31st
-  unsigned vertex_buffer_bitmask_;
+  unsigned vertex_buffer_bitfield_;
 
-  BufferArray buffers_;
+  // A bitfield which stores the indices of bind points
+  //   at which a vertex buffer is bound
+  //  - The order of bits is the same as
+  //    'vertex_buffer_bitfield_' i.e.
+  //    the LSB is index 0, the MSB - index 31
+  //  - Marked as 'mutable' as the array contains
+  //    ephemeral data which 'const' methods
+  //    sometimes need to purge
+  mutable unsigned bound_vertex_buffer_bitfield_;
+
+  // Stores info about bound vertex buffers required
+  //   for the ARB_vertex_array_object code path(s).
+  //  - 'Required' meaning - needed to make the two
+  //    code paths (ARB_vertex_attrib_binding,
+  //    ARB_vertex_array_object) as close to indisti-
+  //    -nguishable from each other from the outside
+  //    as possible
+  //  - For reasoning behind marking this array as
+  //    'mutable' - see comment above the member
+  //    above 'bound_vertex_buffer_bitfield_'
+  mutable BufferArray buffers_;
 
   // See comment above the padding() setter method
   GLSize padding_bytes_;
@@ -197,17 +259,12 @@ private:
   //  - Made 'mutable' so vertexByteSize() can
   //    fill it with the computed value
   mutable std::optional<GLSize> cached_vertex_size_;
+
+  int dbg_forced_va_create_path_;
 };
 
 class GLVertexArray {
 public:
-  struct StrideExceedesMaxAllowedError : public std::runtime_error {
-    StrideExceedesMaxAllowedError() :
-      std::runtime_error("the 'stride' for vertex buffer attribute data CANNOT"
-          " be > than GLVertexFormat::MaxVertexAttribStride!")
-    { }
-  };
-
   struct VertexAttribBindingUnsupportedError : public std::runtime_error {
     VertexAttribBindingUnsupportedError() :
       std::runtime_error("ARB_vertex_attrib_binding support is required to do that!")
@@ -224,10 +281,10 @@ public:
   //       not only for transparency of system detail to users of this
   //       class, but also because non-ARB_vertex_attrib_binding
   //       vertex arrays are completely broken right now :)
-  auto bindVertexBuffer(
-      unsigned index, const GLVertexBuffer& vertex_buffer,
-      GLSize stride, GLSize offset = 0
-    ) -> GLVertexArray&;
+//  auto bindVertexBuffer(
+//      unsigned index, const GLVertexBuffer& vertex_buffer,
+//      GLSize stride, GLSize offset = 0
+//    ) -> GLVertexArray&;
 
   // Bind this vertex array to the OpenGL context,
   //   so it will be used in subsequent draw calls

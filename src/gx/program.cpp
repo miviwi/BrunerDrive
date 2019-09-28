@@ -13,7 +13,8 @@ namespace brdrive {
 
 thread_local GLObject g_bound_program = GLNullObject;
 
-auto Type_to_shaderType(GLShader::Type type) -> GLenum
+[[using gnu: always_inline]]
+constexpr auto Type_to_shaderType(GLShader::Type type) -> GLenum
 {
   switch(type) {
   case GLShader::Vertex:   return GL_VERTEX_SHADER;

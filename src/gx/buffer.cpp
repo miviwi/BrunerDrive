@@ -10,7 +10,8 @@
 
 namespace brdrive {
 
-inline constexpr auto GLBufferUsage_to_usage(GLBuffer::Usage usage) -> GLEnum
+[[using gnu: always_inline]]
+static constexpr auto GLBufferUsage_to_usage(GLBuffer::Usage usage) -> GLEnum
 {
   switch(usage) {
   case GLBuffer::StaticDraw:  return GL_STATIC_DRAW;
@@ -29,7 +30,8 @@ inline constexpr auto GLBufferUsage_to_usage(GLBuffer::Usage usage) -> GLEnum
   return GL_INVALID_ENUM;
 }
 
-inline constexpr auto GLBufferUsage_is_static(GLBuffer::Usage usage) -> bool
+[[using gnu: always_inline]]
+static constexpr auto GLBufferUsage_is_static(GLBuffer::Usage usage) -> bool
 {
   auto frequency = (usage & GLBuffer::FrequencyMask) >> GLBuffer::FrequencyShift;
   return frequency == GLBuffer::Static;
@@ -115,11 +117,21 @@ auto GLBuffer::bindTarget() const -> GLEnum
   return bind_target_;
 }
 
+auto GLBuffer::size() const -> GLSize
+{
+  return size_;
+}
+
 void GLBuffer::bindSelf()
 {
   assert(id_ != GLNullObject && "attempted to use a null buffer!");
 
   glBindBuffer(bind_target_, id_);
+}
+
+void GLBuffer::unbindSelf()
+{
+  glBindBuffer(bind_target_, 0);
 }
 
 GLVertexBuffer::GLVertexBuffer() :
@@ -137,7 +149,8 @@ GLUniformBuffer::GLUniformBuffer() :
 {
 }
 
-inline constexpr auto XferDirection_to_bind_target(
+[[using gnu: always_inline]]
+static constexpr auto XferDirection_to_bind_target(
     GLPixelBuffer::XferDirection xfer_direction
   ) -> GLEnum
 {
@@ -152,7 +165,8 @@ inline constexpr auto XferDirection_to_bind_target(
 }
 
 // TODO: merge these functions with the ones in gx/texture.cpp (?)
-inline constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
+[[using gnu: always_inline]]
+static constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
 {
   switch(format) {
   case r:    return GL_RED;
@@ -170,7 +184,8 @@ inline constexpr auto GLFormat_to_format(GLFormat format) -> GLenum
 }
 
 // TODO: ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-inline constexpr auto GLType_to_type(GLType type) -> GLenum
+[[using gnu: always_inline]]
+static constexpr auto GLType_to_type(GLType type) -> GLenum
 {
   switch(type) {
   case GLType::u8:  return GL_UNSIGNED_BYTE;
@@ -185,6 +200,9 @@ inline constexpr auto GLType_to_type(GLType type) -> GLenum
 
   case GLType::f32: return GL_FLOAT;
 
+  case GLType::u32_24_8:      return GL_UNSIGNED_INT_24_8;
+  case GLType::f32_u32_24_8r: return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
+
   default: ;     // Fallthrough (silence warnings)
   }
 
@@ -195,6 +213,43 @@ GLPixelBuffer::GLPixelBuffer(XferDirection xfer_direction) :
   GLBuffer(XferDirection_to_bind_target(xfer_direction)),
   xfer_direction_(xfer_direction)
 {
+}
+
+// Extract the currently bound texture's name at the
+//   bind target 'bind_target'
+//
+// TODO: somehow restore the name of the texture bound to
+//       the current image unit without querying OpenGL's state...
+static auto get_currently_bound_tex(GLEnum bind_target) -> GLEnum
+{
+  // Have to convert between the bind target enum's value
+  //   which has the for GL_TEXTURE_* to one of the form
+  //   GL_TEXTURE_BINDING_* which is siutable for glGet
+  auto pname = ([bind_target]() -> GLEnum {
+    switch(bind_target) {
+    case GL_TEXTURE_1D:       return GL_TEXTURE_BINDING_1D;
+    case GL_TEXTURE_1D_ARRAY: return GL_TEXTURE_BINDING_1D_ARRAY;
+
+    case GL_TEXTURE_2D:       return GL_TEXTURE_BINDING_2D;
+    case GL_TEXTURE_2D_ARRAY: return GL_TEXTURE_BINDING_2D_ARRAY;
+
+    case GL_TEXTURE_CUBE_MAP: return GL_TEXTURE_BINDING_CUBE_MAP;
+
+    case GL_TEXTURE_3D: return GL_TEXTURE_BINDING_3D;
+
+    default: ;    // Fallthrough (silence warnings)
+    }
+
+    return GL_INVALID_ENUM;
+  })();
+  assert(pname != GL_INVALID_ENUM);
+
+  int current_tex = -1;
+
+  glGetIntegerv(pname, &current_tex);
+  assert(glGetError() == GL_NO_ERROR);
+
+  return current_tex;
 }
 
 auto GLPixelBuffer::uploadTexture(
@@ -233,21 +288,34 @@ auto GLPixelBuffer::uploadTexture(
     default: assert(0 && "TODO: unimplemented!"); break;
     }
   } else {
-    glBindTexture(tex.bindTarget(), tex.id());
+    auto bind_target = tex.bindTarget();
 
+    // Save the currently bound texture...
+    auto current_tex = get_currently_bound_tex(bind_target);
+
+    // ...bind the target texture...
+    glBindTexture(bind_target, tex.id());
+
+    // ..upload the buffer's data to it...
     switch(tex.dimensions()) {
     case GLTexture::TexImage2D:
-      glTextureSubImage2D(
-          tex.bindTarget(), level, 0, 0, tex.width(), tex.height(),
+      glTexSubImage2D(
+          bind_target, level, 0, 0, tex.width(), tex.height(),
           gl_format, gl_type, offset /* The data source is a GLPixelBuffer(Upload) */
       );
       break;
 
     default: assert(0 && "TODO: unimplemented!"); break;
     }
+
+    // ... and restore the previously bound one
+    glBindTexture(bind_target, current_tex);
   }
 
   assert(glGetError() == GL_NO_ERROR);
+
+  // Make sure that future texture operations don't interact with the buffer
+  unbindSelf();
 
   return *this;
 }
@@ -286,31 +354,7 @@ auto GLPixelBuffer::downloadTexture(
 
     // Save the currently bound texture to restore it after the
     //  glGetTexImage() call is made
-    //   TODO: somehow restore the current image unit's binding
-    //         without querying OpenGL's state...
-
-    auto pname = ([bind_target]() -> GLEnum {
-      switch(bind_target) {
-      case GL_TEXTURE_1D: return GL_TEXTURE_BINDING_1D;
-      case GL_TEXTURE_1D_ARRAY: return GL_TEXTURE_BINDING_1D_ARRAY;
-
-      case GL_TEXTURE_2D: return GL_TEXTURE_BINDING_2D;
-      case GL_TEXTURE_2D_ARRAY: return GL_TEXTURE_BINDING_2D_ARRAY;
-
-      case GL_TEXTURE_CUBE_MAP: return GL_TEXTURE_BINDING_CUBE_MAP;
-
-      case GL_TEXTURE_3D: return GL_TEXTURE_BINDING_3D;
-
-      default: ;    // Fallthrough (silence warnings)
-      }
-
-      return GL_INVALID_ENUM;
-    })();
-
-    int current_tex = -1;
-
-    glGetIntegerv(pname, &current_tex);
-    assert(glGetError() == GL_NO_ERROR);
+    auto current_tex = get_currently_bound_tex(bind_target);
     
     // Bind the source texture for the download...
     glBindTexture(bind_target, tex.id());
@@ -327,6 +371,9 @@ auto GLPixelBuffer::downloadTexture(
     // ...and restore the previously bound texture
     glBindTexture(bind_target, current_tex);
   }
+
+  // Make sure that future texture operations don't interact with the buffer
+  unbindSelf();
 
   return *this;
 }

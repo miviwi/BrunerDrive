@@ -20,8 +20,10 @@ enum GLFormat : int {
   r, rg, rgb, rgba,
   r8, rg8, rgb8, rgba8,
   r16f, rg16f,
-  depth, depth_stencil,
+  depth,
   depth16, depth24, depth32f,
+  depth_stencil,
+  depth24_stencil8,
 };
 
 enum class GLType : int {
@@ -30,6 +32,9 @@ enum class GLType : int {
   u16_565, u16_5551,
   u16_565r, u16_1555r,
   f16, f32, fixed16_16,
+
+  u32_24_8,
+  f32_u32_24_8r,
 };
 
 static constexpr unsigned GLNumTexImageUnits = 16; // TODO: query OpenGL for this (?)

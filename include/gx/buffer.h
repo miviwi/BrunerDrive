@@ -59,6 +59,7 @@ public:
   };
 
   GLBuffer(const GLBuffer&) = delete;
+  GLBuffer(GLBuffer&&) = delete;
   virtual ~GLBuffer();
 
   auto alloc(GLSize size, Usage usage, const void *data = nullptr) -> GLBuffer&;
@@ -66,12 +67,17 @@ public:
 
   auto id() const -> GLObject;
   auto bindTarget() const -> GLEnum;
+  auto size() const -> GLSize;
 
 protected:
   GLBuffer(GLEnum bind_target);
 
   // Binds this buffer to the context
   void bindSelf();
+  // Binds 0 to bind_tagret_ (which,
+  //   effectively, unbinds any buffer
+  //   from said target)
+  void unbindSelf(); 
 
   GLObject id_;
   GLEnum bind_target_;
