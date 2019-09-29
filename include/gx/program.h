@@ -16,7 +16,12 @@ class GLShader {
 public:
   enum Type {
     Invalid,
-    Vertex, Geometry, Fragment,
+
+    Vertex,
+    TessControl, TessEvaluation,
+    Geometry, Fragment,
+
+    Compute,
   };
 
   enum : int {

@@ -305,6 +305,7 @@ private:
   GLObject id_;
 };
 
+// Private classes, enums, functions, variables etc.
 namespace vertex_format_detail {
   enum CreateVertexArrayPath {
     Path_vertex_attrib_binding,

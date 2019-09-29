@@ -11,6 +11,11 @@
 
 namespace brdrive {
 
+// 'g_num_extensions' and 'g_extension' are lazy-initialized
+//   by queryExtension(), since the required data can only
+//   be queried after acquiring a GLContext and querying
+//   for GL function's pointers (which is gx_init()'s
+//   responsibility)
 thread_local int g_num_extensions = -1;
 thread_local std::unordered_set<std::string_view> g_extensions;
 
@@ -44,48 +49,42 @@ inline auto query_extension_cached(const char *name, int *ext) -> bool
   return *ext = queryExtension(name);
 }
 
+namespace extensions_detail {
+
+// Defined here to avoid exposing query_extension_cached() in extensions.h
+auto CachedExtensionQuery::operator()() -> bool
+{
+  return query_extension_cached(extension_, &query_result_);
+}
+
+}
+
+#define STRINGIFIED(str) #str
+
 namespace ARB {
+#define DEFINE_ARB_ExtensionQuery(name) \
+  thread_local extensions_detail::CachedExtensionQuery name("GL_ARB_" STRINGIFIED(name));
 
-thread_local int g_vertex_attrib_binding = -1;
-auto vertex_attrib_binding() -> bool
-{
-  return query_extension_cached("GL_ARB_vertex_attrib_binding", &g_vertex_attrib_binding);
-}
+DEFINE_ARB_ExtensionQuery(vertex_attrib_binding);
+DEFINE_ARB_ExtensionQuery(separate_shader_objects);
+DEFINE_ARB_ExtensionQuery(tessellation_shader);
+DEFINE_ARB_ExtensionQuery(compute_shader);
+DEFINE_ARB_ExtensionQuery(texture_storage);
+DEFINE_ARB_ExtensionQuery(buffer_storage);
+DEFINE_ARB_ExtensionQuery(direct_state_access);
 
-thread_local int g_separate_shader_objects = -1;
-auto separate_shader_objects() -> bool
-{
-  return query_extension_cached("GL_ARB_separate_shader_objects", &g_separate_shader_objects);
-}
-
-thread_local int g_texture_storage = -1;
-auto texture_storage() -> bool
-{
-  return query_extension_cached("GL_ARB_texture_storage", &g_texture_storage);
-}
-
-thread_local int g_buffer_storage = -1;
-auto buffer_storage() -> bool
-{
-  return query_extension_cached("GL_ARB_buffer_storage", &g_buffer_storage);
-}
-
-thread_local int g_direct_state_access = -1;
-auto direct_state_access() -> bool
-{
-  return query_extension_cached("GL_ARB_direct_state_access", &g_direct_state_access);
-}
-
+#undef DEFINE_ARB_ExtensionQuery
 }
 
 namespace EXT {
+#define DEFINE_EXT_ExtensionQuery(name) \
+  thread_local extensions_detail::CachedExtensionQuery name("GL_EXT_" STRINGIFIED(name));
 
-thread_local int g_direct_state_access = -1;
-auto direct_state_access() -> bool
-{
-  return query_extension_cached("GL_EXT_direct_state_access", &g_direct_state_access);
+DEFINE_EXT_ExtensionQuery(direct_state_access);
+
+#undef DEFINE_EXT_ExtensionQuery
 }
 
-}
+#undef STRINGIFIED
 
 }

@@ -11,6 +11,7 @@ using GLEnum   = u16;
 using GLObject = unsigned;
 
 using GLSize = int;
+using GLSizePtr = intptr_t;
 
 enum : GLObject {
   GLNullObject = ~0u,

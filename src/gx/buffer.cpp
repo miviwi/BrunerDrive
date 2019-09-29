@@ -37,6 +37,25 @@ static constexpr auto GLBufferUsage_is_static(GLBuffer::Usage usage) -> bool
   return frequency == GLBuffer::Static;
 }
 
+// TODO: try to optimize this somehow..?
+[[using gnu: always_inline]]
+static constexpr auto GLBufferMapFlags_to_access(u32 flags) -> GLbitfield
+{
+  GLbitfield access = 0;
+
+  if(flags & GLBuffer::MapRead)  access |= GL_MAP_READ_BIT;
+  if(flags & GLBuffer::MapWrite) access |= GL_MAP_WRITE_BIT;
+
+  if(flags & GLBuffer::MapInvalidateRange)  access |= GL_MAP_INVALIDATE_RANGE_BIT;
+  if(flags & GLBuffer::MapInvalidateBuffer) access |= GL_MAP_INVALIDATE_BUFFER_BIT;
+  if(flags & GLBuffer::MapFlushExplicit)    access |= GL_MAP_FLUSH_EXPLICIT_BIT;
+  if(flags & GLBuffer::MapUnsynchronized)   access |= GL_MAP_UNSYNCHRONIZED_BIT;
+  if(flags & GLBuffer::MapPersistent)       access |= GL_MAP_PERSISTENT_BIT;
+  if(flags & GLBuffer::MapCoherent)         access |= GL_MAP_COHERENT_BIT;
+
+  return access;
+}
+
 GLBuffer::GLBuffer(GLEnum bind_target) :
   id_(GLNullObject),
   bind_target_(bind_target),
@@ -78,6 +97,8 @@ auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
     } else {
       glBufferData(bind_target_, size, data, GLBufferUsage_to_usage(usage));
     }
+
+    unbindSelf();
   }
 
   assert(glGetError() == GL_NO_ERROR);
@@ -100,7 +121,74 @@ auto GLBuffer::upload(const void *data) -> GLBuffer&
   } else {
     bindSelf();   // glBindBuffer(...)
     glBufferSubData(bind_target_, 0, size_, data);
+    unbindSelf();
   }
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
+}
+
+auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMapping
+{
+  assert(id_ != GLNullObject && "attempted to map a null buffer!");
+
+  assert(!(offset < 0 || size < 0) && "negative offset/size passed to map()");
+
+  // Some validation of the arguments
+
+  if(!(flags & (MapRead|MapWrite))) throw InvalidMapFlagsError();
+
+  if(offset >= size_) throw OffsetExceedesSizeError();
+  if((offset+size) >= size_) throw SizeExceedesBuffersSizeError();
+
+  auto access = GLBufferMapFlags_to_access(flags);
+
+  void *ptr = nullptr;
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    if(!offset && !size) {
+      ptr = glMapNamedBufferRange(id_, 0, size_, access);
+    } else if(!size) {
+      size = size_ - offset;
+
+      glMapNamedBufferRange(id_, offset, size, access);
+    } else {
+      glMapNamedBufferRange(id_, offset, size, access);
+    }
+  } else {
+    bindSelf();
+
+    if(!offset && !size) {
+      ptr = glMapBufferRange(bind_target_, 0, size_, access);
+    } else if(!size) {
+      size = size_ - offset;
+
+      glMapBufferRange(bind_target_, offset, size, access);
+    } else {
+      glMapBufferRange(bind_target_, offset, size, access);
+    }
+
+    unbindSelf();
+  }
+
+  if(!ptr || (glGetError() != GL_NO_ERROR)) throw MapFailedError();
+
+  return GLBufferMapping(*this, flags, ptr);
+}
+
+auto GLBuffer::unmap(GLBufferMapping &mapping) -> GLBuffer&
+{
+  // Check if the buffer hasn't been previously unmap()'ped
+  if(!mapping.ptr_) return *this;
+
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glUnmapNamedBuffer(id_);
+  } else {
+    bindSelf();
+    glUnmapBuffer(bind_target_);
+    unbindSelf();
+  }
+  mapping.ptr_ = nullptr;     // Mark it as unmapped
 
   assert(glGetError() == GL_NO_ERROR);
 
@@ -134,6 +222,55 @@ void GLBuffer::unbindSelf()
   glBindBuffer(bind_target_, 0);
 }
 
+GLBufferMapping::GLBufferMapping(GLBuffer& buffer, u32 flags, void *ptr) :
+  buffer_(buffer), flags_(flags), ptr_(ptr)
+{
+  assert(ptr_ &&
+      "initialized a GLBufferMapping with nullptr! (maybe the glMapBuffer() call failed?)");
+}
+
+GLBufferMapping::~GLBufferMapping()
+{
+  buffer_.unmap(*this);
+}
+
+auto GLBufferMapping::get() -> void *
+{
+  return ptr_;
+}
+
+auto GLBufferMapping::get() const -> const void *
+{
+  return ptr_;
+}
+
+auto GLBufferMapping::flush(intptr_t offset, GLSizePtr length) -> GLBufferMapping&
+{
+  assert(ptr_ && "attempted to flush() a null GLBufferMapping!");
+
+  assert(!(offset < 0 || length < 0) && "offset/length passed to flush() negative!");
+
+  if(!(flags_ & GLBuffer::MapFlushExplicit)) throw MappingNotFlushableError();
+  if(offset >= buffer_.size() || (offset+length) >= buffer_.size()) throw FlushRangeError();
+
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glFlushMappedNamedBufferRange(buffer_.id(), offset, length);
+  } else {
+    glBindBuffer(buffer_.bindTarget(), buffer_.id());
+    glFlushMappedBufferRange(buffer_.bindTarget(), offset, length);
+    glBindBuffer(buffer_.bindTarget(), 0);    // unbind
+  }
+
+  return *this;
+}
+
+void GLBufferMapping::unmap()
+{
+  assert(ptr_ && "attempted to unmap() a null mapping!");
+
+  buffer_.unmap(*this);
+}
+
 GLVertexBuffer::GLVertexBuffer() :
   GLBuffer(GL_ARRAY_BUFFER)
 {
@@ -147,6 +284,35 @@ GLIndexBuffer::GLIndexBuffer() :
 GLUniformBuffer::GLUniformBuffer() :
   GLBuffer(GL_UNIFORM_BUFFER)
 {
+}
+
+auto GLUniformBuffer::bindToIndex(unsigned index, intptr_t offset, GLSizePtr size) -> GLUniformBuffer&
+{
+  assert(id_ != GLNullObject && "attemmpted bindToIndex() on a null buffer!");
+
+  assert(!(offset < 0 || size < 0) && "offset/size negative passed to GLUniformBuffer::bindToIndex()!");
+
+  // Make sure all the arguments are valid...
+
+  if(index >= MaxBindIndex) throw InvalidBindingIndexError();
+
+  if(offset >= size_) throw OffsetExceedesSizeError();
+  if((offset+size) >= size) throw SizeExceedesBuffersSizeError();
+
+  if(!offset && !size) {
+    // If neither the offset nor the size has been specified glBindBufferBase can be used
+    glBindBufferBase(bind_target_, index, id_);
+  } else if(!size) {
+    // If 'size' wasn't specified, set it to the size of the buffer minus the offset
+    size = size_ - offset;
+
+    glBindBufferRange(bind_target_, index, id_, offset, size);
+  } else {
+    // Both the 'size' and 'offset' were specified
+    glBindBufferRange(bind_target_, index, id_, offset, size);
+  }
+
+  return *this;
 }
 
 [[using gnu: always_inline]]

@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <brdrive.h>
 #include <types.h>
@@ -71,48 +72,36 @@ auto expand_1bpp_to_8bpp(const std::vector<uint8_t>& font) -> std::vector<uint8_
 
 int main(int argc, char *argv[])
 {
-  brdrive::x11_init();
+  using namespace brdrive;
+  x11_init();
 
-  brdrive::X11Window window;
-  brdrive::X11EventLoop event_loop;
+  X11Window window;
+  X11EventLoop event_loop;
 
   window
     .geometry({ 0, 0, 960, 960 })
-    .background(brdrive::Color(1.0f, 0.0f, 1.0f, 0.0f))
+    .background(Color(1.0f, 0.0f, 1.0f, 0.0f))
     .create()
     .show();
 
   event_loop
     .init(&window);
 
-  brdrive::GLXContext gl_context;
+  GLXContext gl_context;
 
   gl_context
     .acquire(&window)
     .makeCurrent();
 
-  brdrive::gx_init();
+  gx_init();
 
   gl_context
     .dbg_EnableMessages();
 
-  puts(gl_context.versionString().data());
+  printf("OpenGL %s\n\n", gl_context.versionString().data());
 
-  auto gl_version = gl_context.version();
-  printf("OpenGL %d.%d\n", gl_version.major, gl_version.minor);
-
-  printf("ARB_vertex_attrib_binding: %d\n"
-    "ARB_separate_shader_objects: %d\n"
-    "ARB_direct_state_access: %d\n"
-    "EXT_direct_state_access: %d\n\n",
-    brdrive::ARB::vertex_attrib_binding(),
-    brdrive::ARB::separate_shader_objects(),
-    brdrive::ARB::direct_state_access(),
-    brdrive::EXT::direct_state_access()
-  );
-
-  brdrive::GLShader vert(brdrive::GLShader::Vertex);
-  brdrive::GLShader frag(brdrive::GLShader::Fragment);
+  GLShader vert(GLShader::Vertex);
+  GLShader frag(GLShader::Fragment);
 
   vert
     .glslVersion(330)
@@ -217,7 +206,7 @@ void main()
     return -2;
   }
 
-  brdrive::GLProgram gl_program;
+  GLProgram gl_program;
 
   gl_program
     .attach(vert)
@@ -233,6 +222,14 @@ void main()
   gl_program
     .detach(vert)
     .detach(frag);
+
+  GLProgram compute_shader_program;
+
+  GLShader compute_shader_program_shader(GLShader::Compute);
+  compute_shader_program_shader
+    .glslVersion(430)
+    .source(R"COMPUTE(
+)COMPUTE");
 
   gl_program
     .uniform("usOSD", 0);
@@ -252,20 +249,20 @@ void main()
   auto topaz = expand_1bpp_to_8bpp(topaz_1bpp.value());
   printf("topaz_1bpp.size()=%zu  topaz.size()=%zu\n", topaz_1bpp->size(), topaz.size());
 
-  auto c = brdrive::x11().connection<xcb_connection_t>();
+  auto c = x11().connection<xcb_connection_t>();
 
-  auto topaz_tex_pixel_buf = brdrive::GLPixelBuffer(brdrive::GLPixelBuffer::Upload);
+  auto topaz_tex_pixel_buf = GLPixelBuffer(GLPixelBuffer::Upload);
 
   topaz_tex_pixel_buf
-    .alloc(topaz.size(), brdrive::GLBuffer::StaticRead, topaz.data());
+    .alloc(topaz.size(), GLBuffer::StaticRead, topaz.data());
 
-  brdrive::GLTexture2D topaz_tex;
+  GLTexture2D topaz_tex;
 
   topaz_tex
-    .alloc(8, 4096, 1, brdrive::r8);
+    .alloc(8, 4096, 1, r8);
 
   topaz_tex_pixel_buf
-    .uploadTexture(topaz_tex, 0, brdrive::r, brdrive::GLType::u8);
+    .uploadTexture(topaz_tex, 0, r, GLType::u8);
 
   gl_context.texImageUnit(0)
     .bind(topaz_tex);
@@ -273,9 +270,9 @@ void main()
   gl_program
     .use();
 
-  brdrive::GLVertexFormat color_vertex_format;
+  GLVertexFormat color_vertex_format;
 
-  constexpr brdrive::GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(uint8_t);
+  constexpr GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(uint8_t);
   const uint8_t ColorsData[
       4 /* num vertices */ * (3 /* num components (R,G,B) per vertex */ + 1 /* padding */)
   ] = {
@@ -285,14 +282,18 @@ void main()
       0x80, 0x00, 0xCC, /* padding byte */ 0x00,
   };
 
-  brdrive::GLVertexBuffer color_data_buf;
+  GLVertexBuffer color_data_buf;
   color_data_buf
-    .alloc(ColorsDataSize, brdrive::GLBuffer::StaticDraw, ColorsData);
+    .alloc(ColorsDataSize, GLBuffer::DynamicDraw);
+
+  if(auto color_data_mapping = color_data_buf.map(GLBuffer::MapWrite)) {
+    memcpy(color_data_mapping.get(), ColorsData, ColorsDataSize);
+  }
 
   printf("(empty)color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
 
   color_vertex_format
-    .attr(0, 3, brdrive::GLType::u8, 0)
+    .attr(0, 3, GLType::u8, 0)
     .padding(sizeof(uint8_t));   // Pad data for vertices on 4-byte boundaries
 
   printf("color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
@@ -305,10 +306,10 @@ void main()
     .bind();
   
   bool running = true;
-  while(auto ev = event_loop.event(brdrive::IEventLoop::Block)) {
+  while(auto ev = event_loop.event(IEventLoop::Block)) {
     switch(ev->type()) {
-    case brdrive::Event::KeyUp: {
-      auto event = (brdrive::IKeyEvent *)ev.get();
+    case Event::KeyUp: {
+      auto event = (IKeyEvent *)ev.get();
 
       auto code = event->code();
       auto sym  = event->sym();
@@ -320,15 +321,15 @@ void main()
       break;
     }
 
-    case brdrive::Event::MouseMove: {
-      auto event = (brdrive::IMouseEvent *)ev.get();
+    case Event::MouseMove: {
+      auto event = (IMouseEvent *)ev.get();
       auto delta = event->delta();
 
       break;
     }
 
-    case brdrive::Event::MouseDown: {
-      auto event = (brdrive::IMouseEvent *)ev.get();
+    case Event::MouseDown: {
+      auto event = (IMouseEvent *)ev.get();
       auto point = event->point();
       auto delta = event->delta();
 
@@ -336,12 +337,12 @@ void main()
           point.x, point.y, delta.x, delta.y);
 
       window.drawString("hello, world!",
-          brdrive::Geometry::xy(point.x, point.y), brdrive::Color::white()); 
+          Geometry::xy(point.x, point.y), Color::white()); 
 
       break;
     }
 
-    case brdrive::Event::Quit:
+    case Event::Quit:
       running = false;
       break;
     }
@@ -393,7 +394,7 @@ void main()
   window
      .destroy();
 
-  brdrive::x11_finalize();
+  x11_finalize();
 
   return 0;
 }

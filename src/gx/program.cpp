@@ -17,12 +17,35 @@ thread_local GLObject g_bound_program = GLNullObject;
 constexpr auto Type_to_shaderType(GLShader::Type type) -> GLenum
 {
   switch(type) {
-  case GLShader::Vertex:   return GL_VERTEX_SHADER;
-  case GLShader::Geometry: return GL_GEOMETRY_SHADER;
-  case GLShader::Fragment: return GL_FRAGMENT_SHADER;
+  case GLShader::Vertex:         return GL_VERTEX_SHADER;
+  case GLShader::TessControl:    return GL_TESS_CONTROL_SHADER;
+  case GLShader::TessEvaluation: return GL_TESS_EVALUATION_SHADER;
+  case GLShader::Geometry:       return GL_GEOMETRY_SHADER;
+  case GLShader::Fragment:       return GL_FRAGMENT_SHADER;
+  case GLShader::Compute:        return GL_COMPUTE_SHADER;
   }
 
   return ~0u;
+}
+
+static auto shaderType_supported(GLShader::Type type) -> bool
+{
+  switch(type) {
+  // The shader types below are always supported
+  //   under the chosen minimum required GL version
+  case GLShader::Vertex:       // Fallthrough
+  case GLShader::Geometry:
+  case GLShader::Fragment:    return true;
+
+  // While the rest must be used via extensions - if desired
+
+  case GLShader::TessControl:      // Fallthrough
+  case GLShader::TessEvaluation: return ARB::tessellation_shader;
+
+  case GLShader::Compute: return ARB::compute_shader;
+  }
+
+  return false;    // Unreachable
 }
 
 GLShader::GLShader(Type type) :
@@ -33,6 +56,7 @@ GLShader::GLShader(Type type) :
   version_(DefaultGLSLVersion),
   defines_(std::nullopt)
 {
+
 }
 
 GLShader::GLShader(GLShader&& other) :
