@@ -49,8 +49,6 @@ public:
     UsageInvalid = ~0,
   };
 
-  static constexpr unsigned MaxBindIndex = 16;
-
   enum Flags : u32 {
     // Map Flags
     MapRead  = (1<<0),
@@ -378,9 +376,6 @@ public:
 class GLUniformBuffer : public GLBuffer {
 public:
   GLUniformBuffer();
-
-  // When 'size' isn't specified the entire buffer (starting at 'offset') will be bound by the call
-  auto bindToIndex(unsigned index, intptr_t offset = 0, GLSizePtr size = 0) -> GLUniformBuffer&;
 };
 
 class GLPixelBuffer : public GLBuffer {

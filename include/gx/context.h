@@ -92,8 +92,8 @@ protected:
   bool was_acquired_;
 
 private:
-  GLTexImageUnit *tex_image_units_;  // Array
-  std::array<GLBufferBindPoint *, GLNumBufferBindPoints> buffer_bind_points_;
+  GLTexImageUnit *tex_image_units_;        //   Array
+  GLBufferBindPoint *buffer_bind_points_;  // ---||---
 };
 
 }

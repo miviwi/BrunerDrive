@@ -41,12 +41,13 @@ GLContext::GLContext() :
   }
 
   // Do the same for all the GLBufferBindPoints
+  buffer_bind_points_ = (GLBufferBindPoint *)malloc(
+      GLNumBufferBindPoints * GLBufferBindPointType::NumTypes * sizeof(GLBufferBindPoint)
+  );
   for(size_t type_ = 0; type_ < GLBufferBindPointType::NumTypes; type_++) {
     auto type = (GLBufferBindPointType)type_;
-    auto& bind_points = buffer_bind_points_.at(type_);
+    auto bind_points = buffer_bind_points_ + type_*GLNumBufferBindPoints;
 
-    // Same as with the GLTexImageUnits
-    bind_points = (GLBufferBindPoint *)malloc(GLNumBufferBindPoints * sizeof(GLBufferBindPoint));
     for(unsigned i = 0; i < GLNumBufferBindPoints; i++) {
       auto bind_point = bind_points + i;
 
@@ -68,14 +69,12 @@ GLContext::~GLContext()
   free(tex_image_units_);
 
   // ...and do the same for all the GLBufferBindPoints
-  for(auto& bind_points : buffer_bind_points_) {
-    for(unsigned i = 0; i < GLNumBufferBindPoints; i++) {
-      auto bind_point = bind_points + i;
-      bind_point->~GLBufferBindPoint();
-    }
-
-    free(bind_points);
+  for(unsigned i = 0; i < GLNumBufferBindPoints*GLBufferBindPointType::NumTypes; i++) {
+    auto bind_point = buffer_bind_points_ + i;
+    bind_point->~GLBufferBindPoint();
   }
+
+  free(buffer_bind_points_);
 }
 
 auto GLContext::dbg_EnableMessages() -> GLContext&
@@ -129,7 +128,7 @@ auto GLContext::bufferBindPoint(
   assert((unsigned)bind_point < GLBufferBindPointType::NumTypes && "'bind_point' is invalid!");
   assert(index < GLNumBufferBindPoints && "'index' must be < GLNumBufferBindPoints!");
 
-  return buffer_bind_points_[bind_point][index];
+  return buffer_bind_points_[bind_point*GLNumBufferBindPoints + index];
 }
 
 }

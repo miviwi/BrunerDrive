@@ -415,35 +415,6 @@ GLUniformBuffer::GLUniformBuffer() :
 {
 }
 
-auto GLUniformBuffer::bindToIndex(unsigned index, intptr_t offset, GLSizePtr size) -> GLUniformBuffer&
-{
-  assert(id_ != GLNullObject && "attemmpted bindToIndex() on a null buffer!");
-
-  assert(!(offset < 0 || size < 0) && "offset/size negative passed to GLUniformBuffer::bindToIndex()!");
-
-  // Make sure all the arguments are valid...
-
-  if(index >= MaxBindIndex) throw InvalidBindingIndexError();
-
-  if(offset >= size_) throw OffsetExceedesSizeError();
-  if((offset+size) >= size) throw SizeExceedesBuffersSizeError();
-
-  if(!offset && !size) {
-    // If neither the offset nor the size has been specified glBindBufferBase can be used
-    glBindBufferBase(bind_target_, index, id_);
-  } else if(!size) {
-    // If 'size' wasn't specified, set it to the size of the buffer minus the offset
-    size = size_ - offset;
-
-    glBindBufferRange(bind_target_, index, id_, offset, size);
-  } else {
-    // Both the 'size' and 'offset' were specified
-    glBindBufferRange(bind_target_, index, id_, offset, size);
-  }
-
-  return *this;
-}
-
 [[using gnu: always_inline]]
 static constexpr auto XferDirection_to_bind_target(
     GLPixelBuffer::XferDirection xfer_direction
@@ -697,20 +668,28 @@ auto GLBufferBindPoint::bind(
     const GLBuffer& buffer, intptr_t offset, GLSizePtr size
   ) -> GLBufferBindPoint&
 {
-  assert(!((offset < 0) || (size < 0)));
-  assert(buffer.bindTarget() == target_);
+  assert(!(offset < 0 || size < 0) && "offset/size negative passed to GLBufferBindPoint::bind()!");
+  assert(buffer.id() != GLNullObject && "attemmpted to bind() a null buffer!");
+  assert(buffer.bindTarget() == target_ &&
+      "attempted to bind() a buffer with an incompatible bindTarget() to a bind point!");
 
   GLObject bufferid = buffer.id();
+  GLSize buffer_size = buffer.size();
+
+  // Make sure all the arguments are valid...
+  if(offset >= buffer_size) throw GLBuffer::OffsetExceedesSizeError();
+  if((offset+size) >= buffer_size) throw GLBuffer::SizeExceedesBuffersSizeError();
 
   // Only bind the buffer if it's different than
-  //   the currently bound one
+  //   the one currently bound to this bind point
   if(bound_buffer_ == bufferid) return *this;
 
-  if(!size && !offset) {     // Use the whole buffer
+  if(!size && !offset) {
+    // If neither the offset nor the size has been specified glBindBufferBase() can be used
     glBindBufferBase(target_, index_, bufferid);
   } else {
-    // Check if we eed to compute the left-over space
-    if(!size) size = buffer.size() - offset;
+    // Check if we need to compute the left-over space
+    if(!size) size = buffer_size - offset;
 
     glBindBufferRange(target_, index_, bufferid, offset, size);
   }
