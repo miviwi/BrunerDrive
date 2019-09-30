@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <stdexcept>
+#include <optional>
 
 namespace brdrive {
 
@@ -15,7 +16,7 @@ class GLTexture;
 class GLBuffer {
 public:
   // The values are created such that
-  //     Usage: 0000 ffaa
+  //     Usage: 0b0000'ffaa
   //  where each digit/symbol corresponds
   //  to a single bit and
   //    - 'f' is the frequency of access
@@ -49,7 +50,8 @@ public:
 
   static constexpr unsigned MaxBindIndex = 16;
 
-  enum MapFlags : u32 {
+  enum Flags : u32 {
+    // Map Flags
     MapRead  = (1<<0),
     MapWrite = (1<<1),
 
@@ -59,6 +61,18 @@ public:
     MapUnsynchronized   = (1<<5),
     MapPersistent       = (1<<6),
     MapCoherent         = (1<<7),
+    
+    // Storage flags
+    DynamicStorage = (1<<8),
+    ClientStorage  = (1<<9),
+  };
+
+  struct InvalidAllocFlagsError : public std::runtime_error {
+    InvalidAllocFlagsError() :
+      std::runtime_error(
+          "only { MapRead, MapWrite, MapPersistent, MapCoherent, DynamicStorage, ClientStorage }"
+          " may be included in he 'flags' argument to alloc()")
+      { }
   };
 
   struct NoDataForStaticBufferError : public std::runtime_error {
@@ -114,18 +128,44 @@ public:
   GLBuffer(GLBuffer&&) = delete;
   virtual ~GLBuffer();
 
-  auto alloc(GLSize size, Usage usage, const void *data = nullptr) -> GLBuffer&;
+  // Allocate the GL object for the buffer and it's backing memory
+  //   - MUST be called before any other method ex. map(), upload() etc.
+  auto alloc(
+      GLSize size, Usage usage, u32 /* Flags */ flags = 0, const void *data = nullptr
+    ) -> GLBuffer&;
+
+  // Same as alloc() above, except the flags parameter
+  //   is ommited (defaults to 0)
+  auto alloc(
+      GLSize size, Usage usage, const void *data = nullptr
+    ) -> GLBuffer&;
+
   auto upload(const void *data) -> GLBuffer&;
 
-  auto map(u32 /* MapFlags */ flags, intptr_t offset = 0, GLSizePtr size = 0) -> GLBufferMapping;
+  // Only ONE mapping of a given buffer may exist at a time!
+  auto map(u32 /* Flags */ flags, intptr_t offset = 0, GLSizePtr size = 0) -> GLBufferMapping;
 
   // Also called in ~GLBufferMapping, so a manual
   //   call ism't needed
-  auto unmap(GLBufferMapping& mapping) -> GLBuffer&;
+  auto unmap() -> GLBuffer&;
 
   auto id() const -> GLObject;
   auto bindTarget() const -> GLEnum;
   auto size() const -> GLSize;
+
+/*
+semi-private:
+*/
+  class MappingFriendKey {
+    MappingFriendKey() { }
+
+    friend GLBuffer;
+    friend GLBufferMapping;
+  };
+
+  auto doUnmap(MappingFriendKey, bool force = false) -> GLBuffer&;
+
+  void doFlushMapping(MappingFriendKey, intptr_t offset, GLSizePtr length, void *ptr);
 
 protected:
   GLBuffer(GLEnum bind_target);
@@ -143,10 +183,98 @@ protected:
   GLSize size_;
   Usage usage_;
 
-  // Set to 'true' if map() was called
-  //   and it's GLBufferMapping is still
-  //   in scope
-  bool mapped_;
+  // Stores information on the currently mapped
+  //   buffer region, which is used to attempt
+  //   it's reuse by way of ARB::buffer_storage's
+  //   'MapPersistent' buffer flag.
+  // It is implemented like so:
+  //   - Each buffer keeps a std::optional<CachedMapping>
+  //     which initially has the value std::nullopt
+  //   - alloc() (which needs to be called to create
+  //     the backing OpenGL object) checks for the
+  //     presence of ARB::buffer_storage - and when
+  //     found - the buffer's creation flags are
+  //     extended with:
+  //          MapPersistent|MapCoherent
+  //   - When map() is called, the mapping flags
+  //     are also extended by:
+  //          MapPersistent|MapCoherent
+  //     (though only if ARB::buffer_storage is
+  //     available), then 'mapping_' is inspected
+  //     and if it contains a value that means
+  //     the mapped buffer is still available in
+  //     the address space and so - the requested
+  //     offset, size and flags for the new mapping
+  //     are checked against those of the cached
+  //     one:
+  //          * The cached mapping's offset needs
+  //            to come before the requested offset
+  //          * The cached mapping's size must be
+  //            big enough to accomodate the range
+  //               [offset;offset+size] (relative to buffer)
+  //          * Have the requested MapRead/MapWrite
+  //            flags or more eg. a cached ReadWrite
+  //            mapping can be reused as a read-only
+  //            one
+  //          * The rest of the flags must be ==
+  //            to the requested ones
+  //     A.) If all the above requiremets are fulfilled
+  //         map() returns a mapping based on the cached
+  //         one with it's base pointer shifted by the
+  //         difference between the offsets and the
+  //         offset adjusted by the offset of the cached
+  //         mapping.
+  //     B.) Otherwise the cached mapping is unmapped
+  //         with force=true and a new one is created
+  //         the same way as the first one
+  //   - The unmap() operation gets spoofed by a function
+  //     which ignores the request, this is possible
+  //     due to the 'MapCoherent' flag, which replicates
+  //     the first part of unmap()'s behaviour - the data
+  //     written by the host becomes visible on the
+  //     device. HOWEVER while the affected mapping
+  //     object (GLBufferMapping) gets invalidated,
+  //     the mapping's properties are stil kept in
+  //     the parent GLBuffer - ready for possible
+  //     reuse. This setup however, would create memory
+  //     leaks since when the destructor gets invoked
+  //     and attempts to unmap the cached mapping -
+  //     it will be flushed just like any other unmap()
+  //     call. For this reason there exists a method
+  //     only usable by GLBuffer and GLBufferMapping
+  //     doUnmap(), which takes a [bool: force] para-
+  //     -meter, this parameter - when == true - causes
+  //     glUnmap() to be called regardless if the
+  //     caching mechanism is engaged or not (a
+  //     doUnmap(force=true) call is also made inside
+  //     map() when the cached and requested mapping
+  //     parameters are incompatible and a new mapping
+  //     is actually created)
+  //   - The flush() operation needs only minor changes
+  //     i.e. when using a cached mapping as a new one,
+  //     because flush()'es 'offset' parameter is
+  //     relative to the start of the mapped range -
+  //     it has to be adjusted.
+  // TODO: implement a smarter way of enabling the
+  //       caching mechanism, because under certain
+  //       conditions it WILL do more harm than
+  //       good.
+  struct CachedMapping {
+    void *ptr;
+    u32 flags;
+    intptr_t offset;
+    GLSizePtr size;
+  };
+
+  // Set to std::nullopt by default, calling
+  //   map() emplaces a CachedMapping or
+  //   reads what's already there. 
+  // The value gets reset to std::nullopt
+  //   when the mapping caching mechanism
+  //   isn't used and unmap() is called,
+  //   or by way of:
+  //          doUnmap(force=true)
+  std::optional<CachedMapping> mapping_;
 };
 
 class GLBufferMapping {
@@ -162,6 +290,12 @@ public:
     FlushRangeError() :
       std::runtime_error("attempted to flush the buffer past the mapped range!"
           " (either the offset > mapped_size | size > mapped_size | offset+size > mapped_size)")
+    { }
+  };
+
+  struct FlushUnmappedError : public std::runtime_error {
+    FlushUnmappedError() :
+      std::runtime_error("cannot flush() a mapping which has previously been unmap()'ped")
     { }
   };
 
@@ -206,18 +340,26 @@ public:
 
   // Ensures data written by the host in the range [offset;offset+size]
   //   becomes visible on the device
+  //  - Calling this method on a buffer/mapping created without the
+  //    MapFlushExplicit flag will throw an exception!
   auto flush(intptr_t offset = 0, GLSizePtr length = 0) -> GLBufferMapping&;
 
+  // If called more than once on a given mapping the result is a no-op
   void unmap();
 
 private:
   friend GLBuffer;
 
-  GLBufferMapping(GLBuffer& buffer, u32 /* MapFlags */ flags, void *ptr);
+  GLBufferMapping(
+      GLBuffer& buffer, u32 /* Flags */ flags, void *ptr,
+      intptr_t offset, GLSizePtr size
+  );
 
   GLBuffer& buffer_;
-  u32 /* GLBuffer::MapFlags */ flags_;
+  u32 /* GLBuffer::Flags */ flags_;
   void *ptr_;
+
+  intptr_t offset_; GLSizePtr size_;
 };
 
 class GLVertexBuffer : public GLBuffer {

@@ -284,7 +284,7 @@ void main()
 
   GLVertexBuffer color_data_buf;
   color_data_buf
-    .alloc(ColorsDataSize, GLBuffer::DynamicDraw);
+    .alloc(ColorsDataSize, GLBuffer::DynamicDraw, GLBuffer::MapWrite);
 
   if(auto color_data_mapping = color_data_buf.map(GLBuffer::MapWrite)) {
     memcpy(color_data_mapping.get(), ColorsData, ColorsDataSize);

@@ -39,7 +39,7 @@ static constexpr auto GLBufferUsage_is_static(GLBuffer::Usage usage) -> bool
 
 // TODO: try to optimize this somehow..?
 [[using gnu: always_inline]]
-static constexpr auto GLBufferMapFlags_to_access(u32 flags) -> GLbitfield
+static constexpr auto GLBufferMapFlags_to_GLbitfield(u32 flags) -> GLbitfield
 {
   GLbitfield access = 0;
 
@@ -51,7 +51,8 @@ static constexpr auto GLBufferMapFlags_to_access(u32 flags) -> GLbitfield
   if(flags & GLBuffer::MapFlushExplicit)    access |= GL_MAP_FLUSH_EXPLICIT_BIT;
   if(flags & GLBuffer::MapUnsynchronized)   access |= GL_MAP_UNSYNCHRONIZED_BIT;
   if(flags & GLBuffer::MapPersistent)       access |= GL_MAP_PERSISTENT_BIT;
-  if(flags & GLBuffer::MapCoherent)         access |= GL_MAP_COHERENT_BIT;
+  if(flags & GLBuffer::MapCoherent)         access |= GL_MAP_COHERENT_BIT|GL_MAP_PERSISTENT_BIT;
+  // Spec requires MapPersistent to ALWAYS be present with MapCoherent    ^^^^^^^^^^^^^^^^^^^^^
 
   return access;
 }
@@ -59,7 +60,8 @@ static constexpr auto GLBufferMapFlags_to_access(u32 flags) -> GLbitfield
 GLBuffer::GLBuffer(GLEnum bind_target) :
   id_(GLNullObject),
   bind_target_(bind_target),
-  size_(~0), usage_(UsageInvalid)
+  size_(~0), usage_(UsageInvalid),
+  mapping_(std::nullopt)
 {
 }
 
@@ -67,23 +69,45 @@ GLBuffer::~GLBuffer()
 {
   if(id_ == GLNullObject) return;
 
+  // First - unmap the buffer if it's still mapped
+  if(mapping_) doUnmap(MappingFriendKey(), /* force */ true);
+
   glDeleteBuffers(1, &id_);
 }
 
-auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
+auto GLBuffer::alloc(GLSize size, Usage usage, u32 flags, const void *data) -> GLBuffer&
 {
-  GLbitfield storage_flags = GL_DYNAMIC_STORAGE_BIT|GL_MAP_WRITE_BIT|GL_MAP_PERSISTENT_BIT;
+  assert(size > 0 && "attempted to alloc() a buffer with size <= 0");
+
+  GLbitfield storage_flags = GLBufferMapFlags_to_GLbitfield(flags);
+
+  if(storage_flags & (MapInvalidateRange|MapInvalidateBuffer|MapFlushExplicit|MapUnsynchronized))
+    throw InvalidAllocFlagsError();
+
   if(GLBufferUsage_is_static(usage)) {
     if(!data) throw NoDataForStaticBufferError();
 
-    // Make the buffer's data immutable by the CPU
+    // Make sure the buffer's data is immutable by the CPU
+    //   (regardless if the user requested it or not)
+    //   when 'usage' matches Static*
     storage_flags &= ~GL_DYNAMIC_STORAGE_BIT;
   }
 
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::buffer_storage) {
+    auto rw_flags = flags & (MapRead|MapWrite);          // MapPersistent requires at least one
+    if(!rw_flags) {                                      //   of { MapRead, MapWrite } to be set
+      storage_flags |= GL_MAP_READ_BIT|GL_MAP_WRITE_BIT; //   for the buffer. In case neither
+    }                                                    //   one is present in 'flags' - add both,
+                                                         //   which should (?) be unnoticable
+
+    storage_flags |= GL_MAP_PERSISTENT_BIT; // See comment above GLBuffer::CachedMapping
+    storage_flags |= GL_MAP_COHERENT_BIT;
+  }
+
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glCreateBuffers(1, &id_);
 
-    if(ARB::buffer_storage()) {
+    if(ARB::buffer_storage) {
       glNamedBufferStorage(id_, size, data, storage_flags);
     } else {
       glNamedBufferData(id_, size, data, GLBufferUsage_to_usage(usage));
@@ -92,7 +116,7 @@ auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
     glGenBuffers(1, &id_);
     bindSelf();   // glBindBuffer(...)
 
-    if(ARB::buffer_storage()) {
+    if(ARB::buffer_storage) {
       glBufferStorage(bind_target_, size, data, storage_flags);
     } else {
       glBufferData(bind_target_, size, data, GLBufferUsage_to_usage(usage));
@@ -109,6 +133,11 @@ auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
   return *this;
 }
 
+auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
+{
+  return alloc(size, usage, 0, data);
+}
+
 auto GLBuffer::upload(const void *data) -> GLBuffer&
 {
   assert(id_ != GLNullObject && "attempted to upload() to a null buffer!");
@@ -116,7 +145,7 @@ auto GLBuffer::upload(const void *data) -> GLBuffer&
   // Make sure the buffer was created with proper usage
   if(GLBufferUsage_is_static(usage_)) throw UploadToStaticBufferError();
 
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glNamedBufferSubData(id_, 0, size_, data);
   } else {
     bindSelf();   // glBindBuffer(...)
@@ -142,7 +171,50 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
   if(offset >= size_) throw OffsetExceedesSizeError();
   if((offset+size) >= size_) throw SizeExceedesBuffersSizeError();
 
-  auto access = GLBufferMapFlags_to_access(flags);
+  if(ARB::buffer_storage) {
+    // Make sure to add MapCoherent NOW
+    //   i.e. before the flags compatibility
+    //   check is done
+    flags |= MapCoherent;
+
+    bool cached_mapping_compatible = false;
+
+    // Check if a CachedMapping is available...
+    if(mapping_) {
+      auto& mapping = mapping_.value();
+
+      intptr_t required_size = size+offset - mapping.offset;
+
+      // Check if it's compatible with the requested params
+      //   - A 'required_size' < 0 signifies the requested range
+      //     comes earlier in the buffer compared to the currently
+      //     mapped one
+      if(required_size > 0 && mapping.size >= required_size && mapping.offset >= offset) {
+        // Test if flags contains Map[Read,Write] and give a 'true'
+        //   result if the current mapping has what's required - or more
+        bool read_matched = (mapping.flags & MapRead) >= (flags & MapRead);
+        bool write_matched = (mapping.flags & MapWrite) >= (flags & MapWrite);
+
+        // Test if the current mapping's flags and requested ones (apart from
+        //   MapRead and MapWrite) are the same
+        bool rest_matched = (mapping.flags & ~(MapRead|MapWrite)) == (flags & ~(MapRead|MapWrite));
+
+        cached_mapping_compatible = read_matched && write_matched && rest_matched;
+      }
+
+      if(cached_mapping_compatible) {
+        auto new_offset = offset - mapping_->offset;
+        auto new_ptr = (u8 *)mapping_->ptr + new_offset;
+
+        return GLBufferMapping(*this, mapping_->flags, new_ptr, new_offset, size);
+      } else {
+        // ...if not - destroy it and map the buffer once more
+        doUnmap(MappingFriendKey(), /* force */ true);
+      }
+    }
+  }
+
+  auto access = GLBufferMapFlags_to_GLbitfield(flags);
 
   void *ptr = nullptr;
   if(ARB::direct_state_access || EXT::direct_state_access) {
@@ -173,13 +245,39 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
 
   if(!ptr || (glGetError() != GL_NO_ERROR)) throw MapFailedError();
 
-  return GLBufferMapping(*this, flags, ptr);
+  // Keep the data for later (for altering <un>map()'s behaviour)
+  mapping_ = CachedMapping {
+    ptr,
+    flags,
+    offset, size,
+  };
+
+  return GLBufferMapping(*this, flags, ptr, offset, size);
 }
 
-auto GLBuffer::unmap(GLBufferMapping &mapping) -> GLBuffer&
+auto GLBuffer::unmap() -> GLBuffer&
+{
+  return doUnmap(MappingFriendKey());
+}
+
+auto GLBuffer::doUnmap(MappingFriendKey, bool force) -> GLBuffer&
 {
   // Check if the buffer hasn't been previously unmap()'ped
-  if(!mapping.ptr_) return *this;
+  if(!mapping_) return *this;
+  
+  // After the line before we can assume mapping.has_value() == true
+  auto& mapping = mapping_.value();
+
+  // When 'force' is set to true the mapping re-use mechanism
+  //   gets bypassed. This is necessary when the parent buffer
+  //   has to be destroyed or the mapping recreated
+  if(!force && ARB::buffer_storage) {
+    if(mapping.flags & GLBuffer::MapFlushExplicit) {
+      doFlushMapping(MappingFriendKey(), mapping.offset, mapping.size, mapping.ptr);
+    }
+
+    return *this;
+  }
 
   if(ARB::direct_state_access || EXT::direct_state_access) {
     glUnmapNamedBuffer(id_);
@@ -188,11 +286,49 @@ auto GLBuffer::unmap(GLBufferMapping &mapping) -> GLBuffer&
     glUnmapBuffer(bind_target_);
     unbindSelf();
   }
-  mapping.ptr_ = nullptr;     // Mark it as unmapped
-
   assert(glGetError() == GL_NO_ERROR);
 
+  // ...and clear it's related data stored
+  //    in the parent (i.e. this) GLBuffer
+  mapping_ = std::nullopt;
+
   return *this;
+}
+
+void GLBuffer::doFlushMapping(MappingFriendKey, intptr_t offset, GLSizePtr length, void *ptr)
+{
+  assert((mapping_.has_value() && mapping_->ptr) && "attempted to flush() a null GLBufferMapping!");
+
+  assert(!(offset < 0 || length < 0) && "offset/length passed to flush() negative!");
+
+  // Callers of this method MUST ensure that mapping_.has_value() == true
+  auto& mapping = mapping_.value();
+
+  // Use 'ptr' to correct the offset, as the mapping
+  //   could've been reused - which in turn
+  //   makes it possible that the 'real' mapping
+  //   starts at an earlier point in the buffer
+  intptr_t delta = (u8 *)ptr - (u8 *)mapping.ptr;    // The current GLBufferMapping's size defficit
+  assert(delta >= 0);
+
+  // Advance the offset by the size defficit
+  offset += delta; 
+
+  if(!(mapping.flags & GLBuffer::MapFlushExplicit)) throw GLBufferMapping::MappingNotFlushableError();
+  if(offset >= size() || (offset+length) >= size()) throw GLBufferMapping::FlushRangeError();
+
+  if(ARB::buffer_storage) {
+    auto mapping_coherent = mapping.flags & GLBuffer::MapCoherent;
+    if(mapping_coherent) return;
+  }
+
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glFlushMappedNamedBufferRange(id(), offset, length);
+  } else {
+    glBindBuffer(bindTarget(), id());
+    glFlushMappedBufferRange(bindTarget(), offset, length);
+    glBindBuffer(bindTarget(), 0);    // unbind
+  }
 }
 
 auto GLBuffer::id() const -> GLObject
@@ -222,8 +358,12 @@ void GLBuffer::unbindSelf()
   glBindBuffer(bind_target_, 0);
 }
 
-GLBufferMapping::GLBufferMapping(GLBuffer& buffer, u32 flags, void *ptr) :
-  buffer_(buffer), flags_(flags), ptr_(ptr)
+GLBufferMapping::GLBufferMapping(
+    GLBuffer& buffer, u32 /* Flags */ flags, void *ptr,
+    intptr_t offset, GLSizePtr size
+) :
+  buffer_(buffer), flags_(flags), ptr_(ptr),
+  offset_(offset), size_(size)
 {
   assert(ptr_ &&
       "initialized a GLBufferMapping with nullptr! (maybe the glMapBuffer() call failed?)");
@@ -231,7 +371,7 @@ GLBufferMapping::GLBufferMapping(GLBuffer& buffer, u32 flags, void *ptr) :
 
 GLBufferMapping::~GLBufferMapping()
 {
-  buffer_.unmap(*this);
+  buffer_.unmap();
 }
 
 auto GLBufferMapping::get() -> void *
@@ -246,21 +386,9 @@ auto GLBufferMapping::get() const -> const void *
 
 auto GLBufferMapping::flush(intptr_t offset, GLSizePtr length) -> GLBufferMapping&
 {
-  assert(ptr_ && "attempted to flush() a null GLBufferMapping!");
+  if(!ptr_) throw FlushUnmappedError();
 
-  assert(!(offset < 0 || length < 0) && "offset/length passed to flush() negative!");
-
-  if(!(flags_ & GLBuffer::MapFlushExplicit)) throw MappingNotFlushableError();
-  if(offset >= buffer_.size() || (offset+length) >= buffer_.size()) throw FlushRangeError();
-
-  if(ARB::direct_state_access || EXT::direct_state_access) {
-    glFlushMappedNamedBufferRange(buffer_.id(), offset, length);
-  } else {
-    glBindBuffer(buffer_.bindTarget(), buffer_.id());
-    glFlushMappedBufferRange(buffer_.bindTarget(), offset, length);
-    glBindBuffer(buffer_.bindTarget(), 0);    // unbind
-  }
-
+  buffer_.doFlushMapping(GLBuffer::MappingFriendKey(), offset, length, ptr_);
   return *this;
 }
 
@@ -268,7 +396,8 @@ void GLBufferMapping::unmap()
 {
   assert(ptr_ && "attempted to unmap() a null mapping!");
 
-  buffer_.unmap(*this);
+  buffer_.doUnmap(GLBuffer::MappingFriendKey());
+  ptr_ = nullptr;     // Mark the mapping object itself as unmapped
 }
 
 GLVertexBuffer::GLVertexBuffer() :
@@ -442,7 +571,7 @@ auto GLPixelBuffer::uploadTexture(
   //   whether DSA is available or not
   bindSelf();
 
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     switch(tex.dimensions()) {
     case GLTexture::TexImage2D:
       glTextureSubImage2D(
@@ -510,7 +639,7 @@ auto GLPixelBuffer::downloadTexture(
   //   whether DSA is available or not
   bindSelf();
 
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glGetTextureImage(
         tex.id(), level, gl_format, gl_type, size_,
         offset /* The data destination buffer is a GLPixelBuffer(Download) */
