@@ -9,6 +9,7 @@
 namespace brdrive {
 
 // Forward declarations
+class GLContext;
 class GLBufferMapping;
 class GLVertexArray;
 class GLTexture;
@@ -431,6 +432,33 @@ public:
 
 private:
   XferDirection xfer_direction_;
+};
+
+enum GLBufferBindPointType : unsigned {
+  UniformType,
+  ShaderStorageType,
+  XformFeedbackType,
+
+  NumTypes,
+};
+
+class GLBufferBindPoint {
+public:
+  // - When the 'size' is not specified the whole buffer
+  //   will be bound to this bind point
+  auto bind(
+      const GLBuffer& buffer, intptr_t offset = 0, GLSizePtr size = 0
+    ) -> GLBufferBindPoint&;
+
+private:
+  friend GLContext;
+
+  GLBufferBindPoint(GLBufferBindPointType type, unsigned index);
+
+  GLEnum target_;
+  unsigned index_;
+
+  GLObject bound_buffer_;
 };
 
 }

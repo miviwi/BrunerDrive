@@ -673,4 +673,51 @@ auto GLPixelBuffer::downloadTexture(
   return *this;
 }
 
+[[using gnu: always_inline]]
+static constexpr auto GLBufferBindPointType_to_target(GLBufferBindPointType type) -> GLEnum
+{
+  switch(type) {
+  case UniformType: return GL_UNIFORM_BUFFER;
+  case ShaderStorageType: return GL_SHADER_STORAGE_BUFFER;
+  case XformFeedbackType: return GL_TRANSFORM_FEEDBACK_BUFFER;
+
+  default: assert(0);    // It's the object owner's responsibility to make sure 'type' is always valid
+  }
+
+  return GL_INVALID_ENUM;   // Unreachable
+}
+
+GLBufferBindPoint::GLBufferBindPoint(GLBufferBindPointType type, unsigned index) :
+  target_(GLBufferBindPointType_to_target(type)), index_(index),
+  bound_buffer_(GLNullObject)
+{
+}
+
+auto GLBufferBindPoint::bind(
+    const GLBuffer& buffer, intptr_t offset, GLSizePtr size
+  ) -> GLBufferBindPoint&
+{
+  assert(!((offset < 0) || (size < 0)));
+  assert(buffer.bindTarget() == target_);
+
+  GLObject bufferid = buffer.id();
+
+  // Only bind the buffer if it's different than
+  //   the currently bound one
+  if(bound_buffer_ == bufferid) return *this;
+
+  if(!size && !offset) {     // Use the whole buffer
+    glBindBufferBase(target_, index_, bufferid);
+  } else {
+    // Check if we eed to compute the left-over space
+    if(!size) size = buffer.size() - offset;
+
+    glBindBufferRange(target_, index_, bufferid, offset, size);
+  }
+  bound_buffer_ = bufferid;
+
+  return *this;
+}
+  
+
 }

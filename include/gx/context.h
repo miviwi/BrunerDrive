@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <stdexcept>
+#include <array>
 
 namespace brdrive {
 
@@ -11,8 +12,11 @@ namespace brdrive {
 class IWindow;
 
 class GLTexImageUnit;
+class GLBufferBindPoint;
 class GLTexture2D;
 class GLSampler;
+
+enum GLBufferBindPointType : unsigned;
 // --------------------
 
 // Handle to the underlying OS-specific OpenGL context structure
@@ -74,6 +78,10 @@ public:
 
   auto texImageUnit(unsigned slot) -> GLTexImageUnit&;
 
+  auto bufferBindPoint(
+      GLBufferBindPointType bind_point, unsigned index
+    ) -> GLBufferBindPoint&;
+
   // Can only be called AFTER gx_init()!
   auto dbg_EnableMessages() -> GLContext&;
 
@@ -85,6 +93,7 @@ protected:
 
 private:
   GLTexImageUnit *tex_image_units_;  // Array
+  std::array<GLBufferBindPoint *, GLNumBufferBindPoints> buffer_bind_points_;
 };
 
 }

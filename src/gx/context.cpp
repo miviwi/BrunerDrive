@@ -1,5 +1,6 @@
 #include <gx/context.h>
 #include <gx/texture.h>
+#include <gx/buffer.h>
 
 // OpenGL/gl3w
 #include <GL/gl3w.h>
@@ -38,6 +39,20 @@ GLContext::GLContext() :
     // Use placement-new to finalize creation of the object
     new(unit) GLTexImageUnit(i);
   }
+
+  // Do the same for all the GLBufferBindPoints
+  for(size_t type_ = 0; type_ < GLBufferBindPointType::NumTypes; type_++) {
+    auto type = (GLBufferBindPointType)type_;
+    auto& bind_points = buffer_bind_points_.at(type_);
+
+    // Same as with the GLTexImageUnits
+    bind_points = (GLBufferBindPoint *)malloc(GLNumBufferBindPoints * sizeof(GLBufferBindPoint));
+    for(unsigned i = 0; i < GLNumBufferBindPoints; i++) {
+      auto bind_point = bind_points + i;
+
+      new(bind_point) GLBufferBindPoint(type, i);
+    }
+  }
 }
 
 GLContext::~GLContext()
@@ -51,6 +66,16 @@ GLContext::~GLContext()
 
   // ...and release the memory with free()
   free(tex_image_units_);
+
+  // ...and do the same for all the GLBufferBindPoints
+  for(auto& bind_points : buffer_bind_points_) {
+    for(unsigned i = 0; i < GLNumBufferBindPoints; i++) {
+      auto bind_point = bind_points + i;
+      bind_point->~GLBufferBindPoint();
+    }
+
+    free(bind_points);
+  }
 }
 
 auto GLContext::dbg_EnableMessages() -> GLContext&
@@ -94,6 +119,17 @@ auto GLContext::texImageUnit(unsigned slot) -> GLTexImageUnit&
   assert(slot < GLNumTexImageUnits && "'slot' must be < GLNumTexImageUnits!");
 
   return tex_image_units_[slot];
+}
+
+auto GLContext::bufferBindPoint(
+    GLBufferBindPointType bind_point, unsigned index
+  ) -> GLBufferBindPoint&
+{
+  assert(was_acquired_ && "the context must've been acquire()'d to use it's texImageUnits!");
+  assert((unsigned)bind_point < GLBufferBindPointType::NumTypes && "'bind_point' is invalid!");
+  assert(index < GLNumBufferBindPoints && "'index' must be < GLNumBufferBindPoints!");
+
+  return buffer_bind_points_[bind_point][index];
 }
 
 }
