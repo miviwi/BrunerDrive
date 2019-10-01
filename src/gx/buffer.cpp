@@ -60,7 +60,8 @@ static constexpr auto GLBufferMapFlags_to_GLbitfield(u32 flags) -> GLbitfield
 GLBuffer::GLBuffer(GLEnum bind_target) :
   id_(GLNullObject),
   bind_target_(bind_target),
-  size_(~0), usage_(UsageInvalid),
+  size_(~0), usage_(UsageInvalid), flags_(0),
+  map_counter_(0),
   mapping_(std::nullopt)
 {
 }
@@ -84,7 +85,8 @@ auto GLBuffer::alloc(GLSize size, Usage usage, u32 flags, const void *data) -> G
   if(storage_flags & (MapInvalidateRange|MapInvalidateBuffer|MapFlushExplicit|MapUnsynchronized))
     throw InvalidAllocFlagsError();
 
-  if(GLBufferUsage_is_static(usage)) {
+  auto is_static = GLBufferUsage_is_static(usage);
+  if(is_static) {
     if(!data) throw NoDataForStaticBufferError();
 
     // Make sure the buffer's data is immutable by the CPU
@@ -93,7 +95,7 @@ auto GLBuffer::alloc(GLSize size, Usage usage, u32 flags, const void *data) -> G
     storage_flags &= ~GL_DYNAMIC_STORAGE_BIT;
   }
 
-  if(ARB::buffer_storage) {
+  if(ARB::buffer_storage && !is_static) {
     auto rw_flags = flags & (MapRead|MapWrite);          // MapPersistent requires at least one
     if(!rw_flags) {                                      //   of { MapRead, MapWrite } to be set
       storage_flags |= GL_MAP_READ_BIT|GL_MAP_WRITE_BIT; //   for the buffer. In case neither
@@ -128,7 +130,7 @@ auto GLBuffer::alloc(GLSize size, Usage usage, u32 flags, const void *data) -> G
   assert(glGetError() == GL_NO_ERROR);
 
   // Initialize internal variables
-  size_ = size; usage_ = usage;
+  size_ = size; usage_ = usage; flags_ = storage_flags;
 
   return *this;
 }
@@ -171,7 +173,10 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
   if(offset >= size_) throw OffsetExceedesSizeError();
   if((offset+size) >= size_) throw SizeExceedesBuffersSizeError();
 
-  if(ARB::buffer_storage) {
+  auto is_static = GLBufferUsage_is_static(usage_);
+  if(is_static && map_counter_) throw RewritingStaticBufferError();
+
+  if(ARB::buffer_storage && !is_static) {
     // Make sure to add MapCoherent NOW
     //   i.e. before the flags compatibility
     //   check is done
@@ -205,6 +210,8 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
       if(cached_mapping_compatible) {
         auto new_offset = offset - mapping_->offset;
         auto new_ptr = (u8 *)mapping_->ptr + new_offset;
+
+        map_counter_++;
 
         return GLBufferMapping(*this, mapping_->flags, new_ptr, new_offset, size);
       } else {
@@ -252,6 +259,8 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
     offset, size,
   };
 
+  map_counter_++;
+
   return GLBufferMapping(*this, flags, ptr, offset, size);
 }
 
@@ -271,7 +280,7 @@ auto GLBuffer::doUnmap(MappingFriendKey, bool force) -> GLBuffer&
   // When 'force' is set to true the mapping re-use mechanism
   //   gets bypassed. This is necessary when the parent buffer
   //   has to be destroyed or the mapping recreated
-  if(!force && ARB::buffer_storage) {
+  if(!force && ARB::buffer_storage && (mapping.flags & MapCoherent)) {
     if(mapping.flags & GLBuffer::MapFlushExplicit) {
       doFlushMapping(MappingFriendKey(), mapping.offset, mapping.size, mapping.ptr);
     }

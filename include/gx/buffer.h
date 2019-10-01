@@ -86,6 +86,12 @@ public:
     { }
   };
 
+  struct RewritingStaticBufferError : public std::runtime_error {
+    RewritingStaticBufferError() :
+      std::runtime_error("cannot map() a buffer with 'Static' usage frequency more than once!")
+    { }
+  };
+
   struct InvalidBindingIndexError : public std::runtime_error {
     InvalidBindingIndexError() :
       std::runtime_error("the 'index' for an indexed bind must be in the range [0;MaxBindIndex]")
@@ -181,6 +187,10 @@ protected:
 
   GLSize size_;
   Usage usage_;
+  u32 flags_;
+
+  // Increments by 1 everytime map() is called
+  unsigned map_counter_;
 
   // Stores information on the currently mapped
   //   buffer region, which is used to attempt

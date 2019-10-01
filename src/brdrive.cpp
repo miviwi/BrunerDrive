@@ -198,8 +198,10 @@ void main()
 //  foFragColor = circle(Radius, Yellow, LBlue);
 
 //  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
+    
+    foFragColor = vec4(fi.Color, 1.0f);
 
-  foFragColor = texture(usFontTopaz, (fi.UV+vec2(0, 7.0f))*vec2(4, 1.0f/32.0f)).rrrr;
+//  foFragColor = texture(usFontTopaz, (fi.UV+vec2(0, 7.0f))*vec2(4, 1.0f/32.0f)).rrrr;
 }
 )FRAG");
 
