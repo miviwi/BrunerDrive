@@ -15,6 +15,7 @@ target_sources (BrunerDrive PRIVATE
   ${SrcDir}/gx/buffer.cpp
   ${SrcDir}/gx/texture.cpp
   ${SrcDir}/gx/program.cpp
+  ${SrcDir}/gx/fence.cpp
 
   # X11 specific sources
   ${SrcDir}/x11/x11.cpp

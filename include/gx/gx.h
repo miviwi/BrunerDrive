@@ -21,6 +21,7 @@ enum GLFormat : int {
   r, rg, rgb, rgba,
   r8, rg8, rgb8, rgba8,
   r16f, rg16f,
+  srgb8, srgb8_a8,
   depth,
   depth16, depth24, depth32f,
   depth_stencil,

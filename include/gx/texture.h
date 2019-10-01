@@ -75,6 +75,51 @@ public:
 
 class GLSampler {
 public:
+  enum ParamName {
+    WrapS, WrapT, WrapR,
+    MinFilter, MagFilter,
+    MinLOD, MaxLOD, LODBias,
+    CompareMode, CompareFunc,
+    SeamlessCubemap,
+    MaxAnisotropy,
+  };
+
+  enum SymbolicValue : int {
+    // Values for Wrap[S,T,R]
+    ClampEdge, ClampBorder, Repeat,
+
+    // Values for [Min,Mag]Filter
+    //   - MagFilter only allows { Nearest, Linear}
+    Nearset, Linear, BiLinear, TriLinear,
+    NearestMipmapNearest, NearestMipmapLinear,
+
+    // Values for CompareMode
+    None, CompareRefToTex,
+  
+    // Values for CompareFunc
+    Eq, NotEq, Less, LessEq, Greater, GreaterEq, Always, Never,
+  };
+
+  struct InvalidParamNameError : public std::runtime_error {
+    InvalidParamNameError() :
+      std::runtime_error("the 'pname' argument to the [i,f]Param methods must be a value"
+          " contained in GLSampler::ParamName!")
+    { }
+  };
+
+  struct RequiresSymbolicValueError : public std::runtime_error {
+    RequiresSymbolicValueError() :
+      std::runtime_error("this [i,f]Param requires a GLSampler::SymbolicValue 'value' argument!")
+    { }
+  };
+
+  struct InvalidSymbolicValueError : public std::runtime_error {
+    InvalidSymbolicValueError() :
+      std::runtime_error("for [i,f]Param()'s which require a SymbolicValue argument"
+          " only then ones contained in GLSampler::SymbolicValue can be used!")
+    { }
+  };
+
   GLSampler();
   GLSampler(const GLSampler&) = delete;
   GLSampler(GLSampler&& other);
@@ -84,7 +129,12 @@ public:
 
   auto id() const -> GLObject;
 
+  auto iParam(ParamName pname, int value) -> GLSampler&;
+  auto fParam(ParamName pname, float value) -> GLSampler&;
+
 private:
+  void initGLObject();
+
   GLObject id_;
 };
 

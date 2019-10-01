@@ -46,10 +46,12 @@ extern thread_local extensions_detail::CachedExtensionQuery compute_shader;
 extern thread_local extensions_detail::CachedExtensionQuery texture_storage;
 extern thread_local extensions_detail::CachedExtensionQuery buffer_storage;
 extern thread_local extensions_detail::CachedExtensionQuery direct_state_access;
+extern thread_local extensions_detail::CachedExtensionQuery texture_filter_anisotropic;
 }
 
 namespace EXT {
 extern thread_local extensions_detail::CachedExtensionQuery direct_state_access;
+extern thread_local extensions_detail::CachedExtensionQuery texture_filter_anisotropic;
 }
 
 }

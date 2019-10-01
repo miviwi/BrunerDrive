@@ -14,6 +14,7 @@
 #include <gx/vertex.h>
 #include <gx/texture.h>
 #include <gx/program.h>
+#include <gx/fence.h>
 #include <x11/x11.h>
 #include <x11/connection.h>
 #include <x11/window.h>
@@ -95,6 +96,9 @@ int main(int argc, char *argv[])
 
   gx_init();
 
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
   gl_context
     .dbg_EnableMessages();
 
@@ -112,6 +116,7 @@ layout(location = 0) in vec3 viColor;
 out Vertex {
   vec3 ScreenPosition;
   vec3 Color;
+  vec2 UV;
 } vo;
 
 const vec4 Positions[4] = vec4[](
@@ -121,15 +126,24 @@ const vec4 Positions[4] = vec4[](
   vec4(+1.0f, +1.0f, 0.1f, 1.0f)
 );
 
+const vec2 UVs[4] = vec2[](
+  vec2(0.0f, 0.0f),
+  vec2(0.0f, 1.0f),
+  vec2(1.0f, 1.0f),
+  vec2(1.0f, 0.0f)
+);
+
 const float ScreenAspect = 16.0f/9.0f;
 
 void main()
 {
   vec4 pos = Positions[gl_VertexID];
+  vec2 uv = UVs[gl_VertexID];
   vec3 screen_pos = vec3(pos.x * ScreenAspect, pos.yz);
 
   vo.ScreenPosition = screen_pos;
   vo.Color = viColor;
+  vo.UV = uv;
 
   gl_Position = pos;
 }
@@ -141,11 +155,12 @@ void main()
 in Vertex {
   vec3 ScreenPosition;
   vec3 Color;
+  vec2 UV;
 } fi;
 
-out vec3 foFragColor;
+out vec4 foFragColor;
 
-uniform sampler2D usOSD;
+uniform sampler2D usFontTopaz;
 
 const float Pi = 3.14159;
 
@@ -184,7 +199,7 @@ void main()
 
 //  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
 
-  foFragColor = fi.Color;
+  foFragColor = texture(usFontTopaz, (fi.UV+vec2(0, 7.0f))*vec2(4, 1.0f/32.0f)).rrrr;
 }
 )FRAG");
 
@@ -232,7 +247,7 @@ void main()
 )COMPUTE");
 
   gl_program
-    .uniform("usOSD", 0);
+    .uniform("usFontTopaz", 0);
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -264,8 +279,22 @@ void main()
   topaz_tex_pixel_buf
     .uploadTexture(topaz_tex, 0, r, GLType::u8);
 
+  GLFence topaz_tex_uploaded;
+  topaz_tex_uploaded
+    .fence()
+    .sync();
+
+  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
+
+  GLSampler topaz_tex_sampler;
+  topaz_tex_sampler
+    .iParam(GLSampler::WrapS, GLSampler::Repeat)
+    .iParam(GLSampler::WrapT, GLSampler::Repeat)
+    .iParam(GLSampler::MinFilter, GLSampler::Nearset)
+    .iParam(GLSampler::MagFilter, GLSampler::Nearset);
+
   gl_context.texImageUnit(0)
-    .bind(topaz_tex);
+    .bind(topaz_tex, topaz_tex_sampler);
 
   gl_program
     .use();
@@ -304,6 +333,10 @@ void main()
 
   vertex_array
     .bind();
+
+  topaz_tex_uploaded
+    .block(1);
+  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
   
   bool running = true;
   while(auto ev = event_loop.event(IEventLoop::Block)) {
@@ -346,7 +379,6 @@ void main()
       running = false;
       break;
     }
-
 
     glClear(GL_COLOR_BUFFER_BIT);
 

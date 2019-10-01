@@ -72,6 +72,7 @@ DEFINE_ARB_ExtensionQuery(compute_shader);
 DEFINE_ARB_ExtensionQuery(texture_storage);
 DEFINE_ARB_ExtensionQuery(buffer_storage);
 DEFINE_ARB_ExtensionQuery(direct_state_access);
+DEFINE_ARB_ExtensionQuery(texture_filter_anisotropic);
 
 #undef DEFINE_ARB_ExtensionQuery
 }
@@ -81,6 +82,7 @@ namespace EXT {
   thread_local extensions_detail::CachedExtensionQuery name("GL_EXT_" STRINGIFIED(name));
 
 DEFINE_EXT_ExtensionQuery(direct_state_access);
+DEFINE_EXT_ExtensionQuery(texture_filter_anisotropic);
 
 #undef DEFINE_EXT_ExtensionQuery
 }

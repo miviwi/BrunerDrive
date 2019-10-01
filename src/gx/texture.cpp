@@ -59,6 +59,9 @@ static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case r16f:  return GL_R16F;
   case rg16f: return GL_RG16F;
 
+  case srgb8:    return GL_SRGB8;
+  case srgb8_a8: return GL_SRGB8_ALPHA8;
+
   case depth:    return GL_DEPTH_COMPONENT;
   case depth16:  return GL_DEPTH_COMPONENT16;
   case depth24:  return GL_DEPTH_COMPONENT24;
@@ -184,16 +187,16 @@ auto GLTexture2D::alloc(
   if(ARB::direct_state_access() || EXT::direct_state_access()) {
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   } else {
     glGenTextures(1, &id_);
     glBindTexture(GL_TEXTURE_2D, id_);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   }
@@ -251,6 +254,83 @@ auto GLTexture2D::upload(
   return *this;
 }
 
+[[using gnu: always_inline]]
+static constexpr auto GLSamplerParamName_to_pname(GLSampler::ParamName pname) -> GLEnum
+{
+  switch(pname) {
+  case GLSampler::WrapS: return GL_TEXTURE_WRAP_S;
+  case GLSampler::WrapT: return GL_TEXTURE_WRAP_T;
+  case GLSampler::WrapR: return GL_TEXTURE_WRAP_R;
+
+  case GLSampler::MinFilter: return GL_TEXTURE_MIN_FILTER;
+  case GLSampler::MagFilter: return GL_TEXTURE_MAG_FILTER;
+
+  case GLSampler::MinLOD:  return GL_TEXTURE_MIN_LOD;
+  case GLSampler::MaxLOD:  return GL_TEXTURE_MAX_LOD;
+  case GLSampler::LODBias: return GL_TEXTURE_LOD_BIAS;
+
+  case GLSampler::CompareMode: return GL_TEXTURE_COMPARE_MODE;
+  case GLSampler::CompareFunc: return GL_TEXTURE_COMPARE_FUNC;
+
+  case GLSampler::SeamlessCubemap: return GL_TEXTURE_CUBE_MAP_SEAMLESS;
+
+  case GLSampler::MaxAnisotropy: return GL_TEXTURE_MAX_ANISOTROPY;
+
+  default: ;    // Fallthrough
+  }
+
+  return GL_INVALID_ENUM;
+}
+
+[[using gnu: always_inline]]
+static constexpr auto GLSamplerSymbolicValue_to_param(GLSampler::SymbolicValue param) -> GLEnum
+{
+  switch(param) {
+  case GLSampler::ClampEdge:   return GL_CLAMP_TO_EDGE;
+  case GLSampler::ClampBorder: return GL_CLAMP_TO_BORDER;
+  case GLSampler::Repeat:      return GL_REPEAT;
+
+  case GLSampler::Nearset:              return GL_NEAREST;
+  case GLSampler::Linear:               return GL_LINEAR;
+  case GLSampler::BiLinear:             return GL_LINEAR_MIPMAP_NEAREST;
+  case GLSampler::TriLinear:            return GL_LINEAR_MIPMAP_LINEAR; 
+  case GLSampler::NearestMipmapNearest: return GL_NEAREST_MIPMAP_NEAREST;
+  case GLSampler::NearestMipmapLinear:  return GL_NEAREST_MIPMAP_LINEAR;
+
+  case GLSampler::None:            return GL_NONE;
+  case GLSampler::CompareRefToTex: return GL_COMPARE_REF_TO_TEXTURE;
+
+  case GLSampler::Eq:        return GL_EQUAL;
+  case GLSampler::NotEq:     return GL_NOTEQUAL;
+  case GLSampler::Less:      return GL_LESS;
+  case GLSampler::LessEq:    return GL_LEQUAL;
+  case GLSampler::Greater:   return GL_GREATER;
+  case GLSampler::GreaterEq: return GL_GEQUAL;
+  case GLSampler::Always:    return GL_ALWAYS;
+  case GLSampler::Never:     return GL_NEVER;
+
+  default: ;    // Fallthrough
+  }
+
+  return GL_INVALID_ENUM;
+}
+
+auto params_requires_SymbolicValue(GLSampler::ParamName param) -> bool
+{
+  switch(param) {
+  case GLSampler::WrapS:
+  case GLSampler::WrapT:
+  case GLSampler::WrapR:
+  case GLSampler::MinFilter:
+  case GLSampler::MagFilter:
+  case GLSampler::CompareMode:
+  case GLSampler::CompareFunc:
+    return true;
+  }
+
+  return false;
+}
+
 GLSampler::GLSampler() :
   id_(GLNullObject)
 {
@@ -272,6 +352,43 @@ GLSampler::~GLSampler()
 auto GLSampler::id() const -> GLObject
 {
   return id_;
+}
+
+auto GLSampler::iParam(ParamName pname_, int value) -> GLSampler&
+{
+  // Ensure the sampler has been initialized
+  initGLObject();
+  assert(id_ != GLNullObject);
+
+  auto pname = GLSamplerParamName_to_pname(pname_);
+  if(pname == GL_INVALID_ENUM) throw InvalidParamNameError();
+
+  int param = -1;
+  if(params_requires_SymbolicValue(pname_)) {
+    param = GLSamplerSymbolicValue_to_param((SymbolicValue)value);
+  } else {
+    param = value;
+  }
+
+  glSamplerParameteri(id_, pname, param);
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
+}
+
+auto GLSampler::fParam(ParamName pname_, float value) -> GLSampler&
+{
+  assert(0 && "unimplemented!");
+
+  return *this;
+}
+
+void GLSampler::initGLObject()
+{
+  if(id_ != GLNullObject) return;
+
+  glGenSamplers(1, &id_);
 }
 
 GLTexImageUnit::GLTexImageUnit(unsigned slot) :
