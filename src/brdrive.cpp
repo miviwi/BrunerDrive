@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <chrono>
 #include <optional>
 
 auto load_font(const std::string& file_name) -> std::optional<std::vector<uint8_t>>
@@ -246,10 +247,70 @@ void main()
   compute_shader_program_shader
     .glslVersion(430)
     .source(R"COMPUTE(
+uniform writeonly image2D uiComputeOut;
+
+layout(local_size_x=1, local_size_y=1, local_size_z=1) in;
+
+void main()
+{
+  float work_group_x = float(gl_WorkGroupID.x) / 4096.0f;     // normalize to [0;1]
+  imageStore(uiComputeOut, ivec2(int(gl_WorkGroupID.x), 0), vec4(work_group_x, 0, 0, 1));
+}
 )COMPUTE");
+
+  try {
+    compute_shader_program_shader.compile();
+  } catch(const std::exception& e) {
+    auto info_log = compute_shader_program_shader.infoLog();
+
+    if(info_log) {
+      puts(info_log->data());
+    }
+
+    return -2;
+  }
+
+   compute_shader_program
+     .attach(compute_shader_program_shader);
+
+   try {
+    compute_shader_program.link();
+  } catch(const std::exception& e) {
+    if(!compute_shader_program.infoLog()) return -2;
+
+    puts(compute_shader_program.infoLog()->data());
+    return -2;
+  }
+
+  GLTexture2D compute_output_tex;
+  compute_output_tex
+    .alloc(4096, 1, 1, r32f);
+
+  glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
   gl_program
     .uniform("usFontTopaz", 0);
+
+  compute_shader_program
+    .uniform("uiComputeOut", 0);
+
+  std::chrono::high_resolution_clock clock;
+  auto start = clock.now();
+
+  compute_shader_program.use();
+  glDispatchCompute(4096, 1, 1);
+
+  auto end = clock.now();
+
+  auto ms_counts = std::chrono::milliseconds(1).count(); 
+
+  printf("\ncompute_shader_program took: %dus\n\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end-start));
+
+  GLFence compute_fence;
+  compute_fence
+    .fence()
+    .block();
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);

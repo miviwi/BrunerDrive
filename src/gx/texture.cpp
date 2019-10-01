@@ -59,6 +59,8 @@ static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case r16f:  return GL_R16F;
   case rg16f: return GL_RG16F;
 
+  case r32f: return GL_R32F;
+
   case srgb8:    return GL_SRGB8;
   case srgb8_a8: return GL_SRGB8_ALPHA8;
 
