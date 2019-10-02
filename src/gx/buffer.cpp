@@ -180,6 +180,8 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
   auto is_static = GLBufferUsage_is_static(usage_);
   if(is_static && map_counter_) throw RewritingStaticBufferError();
 
+  auto proper_size = size ? size : size_;
+
   if(ARB::buffer_storage && !is_static) {
     // Make sure to add MapCoherent NOW
     //   i.e. before the flags compatibility
@@ -192,14 +194,13 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
     if(mapping_) {
       auto& mapping = mapping_.value();
 
-      auto proper_size = size ? size : size_;
       intptr_t required_size = proper_size+offset - mapping.offset;
 
       // Check if it's compatible with the requested params
       //   - A 'required_size' < 0 signifies the requested range
       //     comes earlier in the buffer compared to the currently
       //     mapped one
-      if(required_size > 0 && mapping.size >= required_size && mapping.offset >= offset) {
+      if(required_size > 0 && mapping.size >= required_size && mapping.offset <= offset) {
         // Test if flags contains Map[Read,Write] and give a 'true'
         //   result if the current mapping has what's required - or more
         bool read_matched = (mapping.flags & MapRead) >= (flags & MapRead);
@@ -261,7 +262,7 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
   mapping_ = CachedMapping {
     ptr,
     flags,
-    offset, size,
+    offset, proper_size,
   };
 
   map_counter_++;
