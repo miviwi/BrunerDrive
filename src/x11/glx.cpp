@@ -208,6 +208,8 @@ auto GLXContext::makeCurrent() -> GLContext&
   auto success = glXMakeContextCurrent(display, drawable, drawable, context);
   if(!success) throw AcquireError();
 
+  postMakeCurrentHook();
+
   return *this;
 }
 

@@ -189,7 +189,7 @@ auto GLShader::compile() -> GLShader&
   if(has_version_string) {
     char version_string_buf[64];
     int num_printed = snprintf(version_string_buf, sizeof(version_string_buf),
-        "#version %d\n\n",
+        "#version %d\n",
         version_);
 
     assert((num_printed > 0 && num_printed < sizeof(version_string_buf)) &&

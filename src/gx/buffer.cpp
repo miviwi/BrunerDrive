@@ -1,7 +1,8 @@
 #include <gx/buffer.h>
-#include <gx/extensions.h>
 #include <gx/vertex.h>
 #include <gx/texture.h>
+#include <gx/context.h>
+#include <gx/extensions.h>
 
 // OpenGL/gl3w
 #include <GL/gl3w.h>
@@ -53,6 +54,9 @@ static constexpr auto GLBufferMapFlags_to_GLbitfield(u32 flags) -> GLbitfield
   if(flags & GLBuffer::MapPersistent)       access |= GL_MAP_PERSISTENT_BIT;
   if(flags & GLBuffer::MapCoherent)         access |= GL_MAP_COHERENT_BIT|GL_MAP_PERSISTENT_BIT;
   // Spec requires MapPersistent to ALWAYS be present with MapCoherent    ^^^^^^^^^^^^^^^^^^^^^
+
+  if(flags & GLBuffer::DynamicStorage) access |= GL_DYNAMIC_STORAGE_BIT;
+  if(flags & GLBuffer::ClientStorage)  access |= GL_CLIENT_STORAGE_BIT;
 
   return access;
 }
@@ -171,7 +175,7 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
   if(!(flags & (MapRead|MapWrite))) throw InvalidMapFlagsError();
 
   if(offset >= size_) throw OffsetExceedesSizeError();
-  if((offset+size) >= size_) throw SizeExceedesBuffersSizeError();
+  if((offset+(size ? size : size_)) > size_) throw SizeExceedesBuffersSizeError();
 
   auto is_static = GLBufferUsage_is_static(usage_);
   if(is_static && map_counter_) throw RewritingStaticBufferError();
@@ -188,7 +192,8 @@ auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMappin
     if(mapping_) {
       auto& mapping = mapping_.value();
 
-      intptr_t required_size = size+offset - mapping.offset;
+      auto proper_size = size ? size : size_;
+      intptr_t required_size = proper_size+offset - mapping.offset;
 
       // Check if it's compatible with the requested params
       //   - A 'required_size' < 0 signifies the requested range
@@ -280,13 +285,7 @@ auto GLBuffer::doUnmap(MappingFriendKey, bool force) -> GLBuffer&
   // When 'force' is set to true the mapping re-use mechanism
   //   gets bypassed. This is necessary when the parent buffer
   //   has to be destroyed or the mapping recreated
-  if(!force && ARB::buffer_storage && (mapping.flags & MapCoherent)) {
-    if(mapping.flags & GLBuffer::MapFlushExplicit) {
-      doFlushMapping(MappingFriendKey(), mapping.offset, mapping.size, mapping.ptr);
-    }
-
-    return *this;
-  }
+  if(!force && (mapping.flags & MapCoherent)) return *this;
 
   if(ARB::direct_state_access || EXT::direct_state_access) {
     glUnmapNamedBuffer(id_);
@@ -653,11 +652,16 @@ auto GLPixelBuffer::downloadTexture(
   return *this;
 }
 
+GLBufferTexture::GLBufferTexture() :
+  GLBuffer(GL_TEXTURE_BUFFER)
+{
+}
+
 [[using gnu: always_inline]]
 static constexpr auto GLBufferBindPointType_to_target(GLBufferBindPointType type) -> GLEnum
 {
   switch(type) {
-  case UniformType: return GL_UNIFORM_BUFFER;
+  case UniformType:       return GL_UNIFORM_BUFFER;
   case ShaderStorageType: return GL_SHADER_STORAGE_BUFFER;
   case XformFeedbackType: return GL_TRANSFORM_FEEDBACK_BUFFER;
 
@@ -667,7 +671,10 @@ static constexpr auto GLBufferBindPointType_to_target(GLBufferBindPointType type
   return GL_INVALID_ENUM;   // Unreachable
 }
 
-GLBufferBindPoint::GLBufferBindPoint(GLBufferBindPointType type, unsigned index) :
+GLBufferBindPoint::GLBufferBindPoint(
+    GLContext *context, GLBufferBindPointType type, unsigned index
+) :
+  context_(context),
   target_(GLBufferBindPointType_to_target(type)), index_(index),
   bound_buffer_(GLNullObject)
 {

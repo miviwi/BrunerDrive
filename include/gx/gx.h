@@ -7,14 +7,14 @@
 
 namespace brdrive {
 
-using GLEnum   = u16;
+using GLEnum   = u32;
 using GLObject = unsigned;
 
 using GLSize = int;
 using GLSizePtr = intptr_t;
 
 enum : GLObject {
-  GLNullObject = ~0u,
+  GLNullObject = 0u,
 };
 
 enum GLFormat : int {
@@ -22,6 +22,7 @@ enum GLFormat : int {
   r8, rg8, rgb8, rgba8,
   r16f, rg16f,
   r32f,
+  r8i, r8ui,
   srgb8, srgb8_a8,
   depth,
   depth16, depth24, depth32f,

@@ -13,6 +13,8 @@
 
 namespace brdrive {
 
+thread_local GLContext *g_current_context = nullptr;
+
 static void dbg_message_callback(
     GLenum source, GLenum type, GLuint id, GLenum severity,
     GLsizei length, const GLchar* message, const void* userParam
@@ -28,7 +30,9 @@ static void dbg_message_callback(
 
 GLContext::GLContext() :
   was_acquired_(false),
-  tex_image_units_(nullptr)
+  tex_image_units_(nullptr),
+  active_texture_(0),
+  buffer_bind_points_(nullptr)
 {
   // Allocate backing memory via malloc() because GLTexImageUnit's constructor requires
   //   an argument and new[] doesn't support passing per-instance args
@@ -37,7 +41,7 @@ GLContext::GLContext() :
     auto unit = tex_image_units_ + i;
 
     // Use placement-new to finalize creation of the object
-    new(unit) GLTexImageUnit(i);
+    new(unit) GLTexImageUnit(this, i);
   }
 
   // Do the same for all the GLBufferBindPoints
@@ -51,7 +55,7 @@ GLContext::GLContext() :
     for(unsigned i = 0; i < GLNumBufferBindPoints; i++) {
       auto bind_point = bind_points + i;
 
-      new(bind_point) GLBufferBindPoint(type, i);
+      new(bind_point) GLBufferBindPoint(this, type, i);
     }
   }
 }
@@ -75,6 +79,11 @@ GLContext::~GLContext()
   }
 
   free(buffer_bind_points_);
+}
+
+auto GLContext::current() -> GLContext *
+{
+  return g_current_context;
 }
 
 auto GLContext::dbg_EnableMessages() -> GLContext&
@@ -120,6 +129,11 @@ auto GLContext::texImageUnit(unsigned slot) -> GLTexImageUnit&
   return tex_image_units_[slot];
 }
 
+auto GLContext::activeTexture() const -> unsigned
+{
+  return active_texture_;
+}
+
 auto GLContext::bufferBindPoint(
     GLBufferBindPointType bind_point, unsigned index
   ) -> GLBufferBindPoint&
@@ -129,6 +143,11 @@ auto GLContext::bufferBindPoint(
   assert(index < GLNumBufferBindPoints && "'index' must be < GLNumBufferBindPoints!");
 
   return buffer_bind_points_[bind_point*GLNumBufferBindPoints + index];
+}
+
+void GLContext::postMakeCurrentHook()
+{
+  g_current_context = this;
 }
 
 }

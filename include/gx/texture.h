@@ -13,6 +13,7 @@ class GLTexture;
 class GLTexture2D;
 class GLSampler;
 class GLTexImageUnit;
+class GLBuffer;
 
 class GLTexture {
 public:
@@ -71,6 +72,16 @@ public:
 
   auto alloc(unsigned width, unsigned height, unsigned levels, GLFormat internalformat) -> GLTexture2D&;
   auto upload(unsigned level, GLFormat format, GLType type, const void *data) -> GLTexture2D&;
+};
+
+class GLTextureBuffer : public GLTexture {
+public:
+  GLTextureBuffer();
+  GLTextureBuffer(GLTextureBuffer&&) = delete;
+
+  auto buffer(GLFormat internalformat, const GLBuffer& buffer) -> GLTextureBuffer&;
+
+private:
 };
 
 class GLSampler {
@@ -144,10 +155,14 @@ public:
   auto bind(const GLSampler& sampler) -> GLTexImageUnit&;
   auto bind(const GLTexture& tex, const GLSampler& sampler) -> GLTexImageUnit&;
 
+  auto boundTexture() const -> GLObject;
+
 private:
   friend GLContext;
 
-  GLTexImageUnit(unsigned slot);
+  GLTexImageUnit(GLContext *context, unsigned slot);
+
+  GLContext *context_;
 
   unsigned slot_;
 

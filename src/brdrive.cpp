@@ -110,7 +110,6 @@ int main(int argc, char *argv[])
 
   vert
     .glslVersion(330)
-    .define("DEF_BEFORE_SOURCE")
     .source(R"VERT(
 layout(location = 0) in vec3 viColor;
 
@@ -118,38 +117,63 @@ out Vertex {
   vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
+  float Character;
 } vo;
 
 const vec4 Positions[4] = vec4[](
-  vec4(-1.0f, +1.0f, 0.1f, 1.0f),
-  vec4(-1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, +1.0f, 0.1f, 1.0f)
+  vec4(-1.0f, 0.25f, 0.1f, 1.0f),
+  vec4(-1.0f, 0.0f, 0.1f, 1.0f),
+  vec4(-0.875f, 0.0f, 0.1f, 1.0f),
+  vec4(-0.875f, 0.25f, 0.1f, 1.0f)
 );
 
 const vec2 UVs[4] = vec2[](
-  vec2(0.0f, 0.0f),
-  vec2(0.0f, 1.0f),
-  vec2(1.0f, 1.0f),
-  vec2(1.0f, 0.0f)
+  vec2(0.0f, 0.0f/256.0f),
+  vec2(0.0f, 1.0f/256.0f),
+  vec2(1.0f, 1.0f/256.0f),
+  vec2(1.0f, 0.0f/256.0f)
 );
 
 const float ScreenAspect = 16.0f/9.0f;
 
+uniform isamplerBuffer usString;
+
+int QuadVertexID()
+{
+  switch(gl_VertexID % 6) {
+  case 0: return 0;
+  case 1: return 1;
+  case 2: return 2;
+  case 3: return 2;
+  case 4: return 3;
+  case 5: return 0;
+  }
+
+  return -1;
+}
+
+const float CharHeight = 255.0f/256.0f;
+
 void main()
 {
-  vec4 pos = Positions[gl_VertexID];
-  vec2 uv = UVs[gl_VertexID];
+  int character_num = gl_VertexID >> 2;
+  int vert_id = gl_VertexID & 3;
+
+  int char = texelFetch(usString, character_num).r;
+  float char_uv_offset = float(char) * CharHeight;
+
+  vec4 pos = Positions[vert_id];
+  vec2 uv = UVs[vert_id] - vec2(0.0f, char_uv_offset);
   vec3 screen_pos = vec3(pos.x * ScreenAspect, pos.yz);
 
   vo.ScreenPosition = screen_pos;
   vo.Color = viColor;
   vo.UV = uv;
+  vo.Character = char;
 
-  gl_Position = pos;
+  gl_Position = pos + vec4(float(character_num)*0.125f, 0.0f, 0.0f, 0.0f);
 }
 )VERT")
-  .define("DEF_AFTER_SOURCE")
   ;
 
   frag.source(R"FRAG(
@@ -157,6 +181,7 @@ in Vertex {
   vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
+  float Character;
 } fi;
 
 out vec4 foFragColor;
@@ -200,9 +225,9 @@ void main()
 
 //  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
     
-    foFragColor = vec4(fi.Color, 1.0f);
-
 //  foFragColor = texture(usFontTopaz, (fi.UV+vec2(0, 7.0f))*vec2(4, 1.0f/32.0f)).rrrr;
+  foFragColor = texture(usFontTopaz, fi.UV).rrrr;
+//  foFragColor = vec4(fi.UV, 0.0f, 1.0f);
 }
 )FRAG");
 
@@ -288,9 +313,6 @@ void main()
 
   glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
 
-  gl_program
-    .uniform("usFontTopaz", 0);
-
   compute_shader_program
     .uniform("uiComputeOut", 0);
 
@@ -317,6 +339,32 @@ void main()
 
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
   glClear(GL_COLOR_BUFFER_BIT);
+
+  const char topaz_test_string[] = "hello, sailor!";
+
+  GLBufferTexture string_buf_tex;
+  string_buf_tex
+    .alloc(sizeof(topaz_test_string), GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage);
+
+  {
+    auto string_buf_tex_mapping = string_buf_tex.map(
+        GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
+    );
+
+    memcpy(string_buf_tex_mapping.get(), topaz_test_string, sizeof(topaz_test_string));
+  }
+
+  GLTextureBuffer string_tex_buf;
+  string_tex_buf
+    .buffer(r8i, string_buf_tex);
+
+  gl_context
+    .texImageUnit(1)
+    .bind(string_tex_buf);
+
+  gl_program
+    .uniform("usFontTopaz", 0)
+    .uniform("usString", 1);
 
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
@@ -358,6 +406,20 @@ void main()
 
   gl_context.texImageUnit(0)
     .bind(topaz_tex, topaz_tex_sampler);
+
+  u16 string_vert_indices[sizeof(topaz_test_string)*5];
+  for(size_t i = 0; i < sizeof(string_vert_indices)/sizeof(u16); i++) {
+    u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
+
+    string_vert_indices[i] = idx;
+  }
+
+  GLIndexBuffer text_index_buf;
+  text_index_buf
+    .alloc(sizeof(string_vert_indices), GLBuffer::DynamicDraw, string_vert_indices);
+
+  glEnable(GL_PRIMITIVE_RESTART);
+  glPrimitiveRestartIndex(0xFFFF);
 
   gl_program
     .use();
@@ -402,9 +464,10 @@ void main()
   printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
   
   bool running = true;
+  bool change = true;
   while(auto ev = event_loop.event(IEventLoop::Block)) {
     switch(ev->type()) {
-    case Event::KeyUp: {
+    case Event::KeyDown: {
       auto event = (IKeyEvent *)ev.get();
 
       auto code = event->code();
@@ -414,6 +477,15 @@ void main()
           code, code, code, sym, sym, sym);
 
       if(sym == 'q') running = false;
+
+      if(sym == 'c' || change) {
+        const char new_text[] = "hello - again!!";
+
+        auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
+
+        memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
+        change = false;
+      }
       break;
     }
 
@@ -443,9 +515,20 @@ void main()
       break;
     }
 
+    if(change) {
+      const char new_text[] = "hello - again!!";
+
+      auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
+
+      memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
+      change = false;
+    }
+
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, text_index_buf.id());
+    glDrawElements(GL_TRIANGLE_FAN, sizeof(topaz_test_string)*5, GL_UNSIGNED_SHORT, (const void *)0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
 /*
     for(int i = 0; i < 32; i++) {

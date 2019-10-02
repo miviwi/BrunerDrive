@@ -439,6 +439,11 @@ private:
   XferDirection xfer_direction_;
 };
 
+class GLBufferTexture : public GLBuffer {
+public:
+  GLBufferTexture();
+};
+
 enum GLBufferBindPointType : unsigned {
   UniformType,
   ShaderStorageType,
@@ -458,7 +463,9 @@ public:
 private:
   friend GLContext;
 
-  GLBufferBindPoint(GLBufferBindPointType type, unsigned index);
+  GLBufferBindPoint(GLContext *context, GLBufferBindPointType type, unsigned index);
+
+  GLContext *context_;
 
   GLEnum target_;
   unsigned index_;

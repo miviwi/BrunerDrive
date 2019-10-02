@@ -1,4 +1,6 @@
 #include <gx/texture.h>
+#include <gx/buffer.h>
+#include <gx/context.h>
 #include <gx/extensions.h>
 
 // OpenGL/gl3w
@@ -16,6 +18,7 @@ static constexpr auto bind_target_to_Dimensions(GLEnum bind_target) -> GLTexture
 {
   switch(bind_target) {
   case GL_TEXTURE_1D:
+  case GL_TEXTURE_BUFFER:
     return GLTexture::TexImage1D;
 
   case GL_TEXTURE_1D_ARRAY:
@@ -60,6 +63,9 @@ static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case rg16f: return GL_RG16F;
 
   case r32f: return GL_R32F;
+
+  case r8i: return GL_R8I;
+  case r8ui: return GL_R8UI;
 
   case srgb8:    return GL_SRGB8;
   case srgb8_a8: return GL_SRGB8_ALPHA8;
@@ -209,12 +215,22 @@ auto GLTexture2D::alloc(
   width_ = width; height_ = height;
   levels_ = levels;
 
+  GLObject bound_texture = GLNullObject;
+
   auto gl_internalformat = GLFormat_to_internalformat(internalformat);
   if(gl_internalformat == GL_INVALID_ENUM) throw InvalidFormatTypeError();
 
   if(ARB::texture_storage()) {
     glTextureStorage2D(id_, levels, gl_internalformat, width, height);
   } else {
+    // Save current texture for future retrieval
+    auto current_context = GLContext::current();
+    assert(current_context);
+
+    auto current_tex_unit = current_context->texImageUnit(current_context->activeTexture());
+    bound_texture = current_tex_unit.boundTexture();
+
+    // Allocate the whole mipmap chain
     for(unsigned l = 0; l < levels; l++) {
       glTexImage2D(GL_TEXTURE_2D, l, gl_internalformat, width, height,
         /* border */ 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
@@ -222,6 +238,10 @@ auto GLTexture2D::alloc(
       width  = std::max(1u, width/2);
       height = std::max(1u, height/2);
     }
+  }
+
+  if(!ARB::direct_state_access) {   // Restore the previously bound texture
+    glBindTexture(GL_TEXTURE_2D, bound_texture);
   }
 
   assert(glGetError() == GL_NO_ERROR);
@@ -236,12 +256,21 @@ auto GLTexture2D::upload(
   auto gl_format = GLFormat_to_format(format);
   auto gl_type   = GLType_to_type(type);
 
+  GLObject bound_texture = GLNullObject;
+
   if(gl_format == GL_INVALID_ENUM || gl_type == GL_INVALID_ENUM)
     throw InvalidFormatTypeError();
 
   if(ARB::direct_state_access() || EXT::direct_state_access()) {
     glTextureSubImage2D(id_, level, 0, 0, width_, height_, gl_format, gl_type, data);
   } else {
+    // Save current texture for future retrieval
+    auto current_context = GLContext::current();
+    assert(current_context);
+
+    auto current_tex_unit = current_context->texImageUnit(current_context->activeTexture());
+    bound_texture = current_tex_unit.boundTexture();
+
     glBindTexture(GL_TEXTURE_2D, id_);
     glTexSubImage2D(GL_TEXTURE_2D, level, 0, 0, width_, height_, gl_format, gl_type, data);
   }
@@ -253,8 +282,48 @@ auto GLTexture2D::upload(
   // ...and make sure there were no other errors ;)
   assert(err == GL_NO_ERROR);
 
+  if(!ARB::direct_state_access) {
+    glBindTexture(GL_TEXTURE_2D, bound_texture);
+  }
+
   return *this;
 }
+
+GLTextureBuffer::GLTextureBuffer() :
+  GLTexture(GL_TEXTURE_BUFFER)
+{
+}
+
+auto GLTextureBuffer::buffer(
+    GLFormat internalformat_, const GLBuffer& buffer
+  ) -> GLTextureBuffer&
+{
+  assert(buffer.id() != GLNullObject &&
+      "attempted to attach a null buffer to a GLBufferTexture!");
+
+  auto internalformat = GLFormat_to_internalformat(internalformat_);
+  assert(internalformat != GL_INVALID_ENUM);
+
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glCreateTextures(GL_TEXTURE_BUFFER, 1, &id_);
+
+    glTextureBuffer(id_, internalformat, buffer.id());
+  } else {
+    glGenTextures(1, &id_);
+    glBindTexture(GL_TEXTURE_BUFFER, id_);
+
+    glTexBuffer(GL_TEXTURE_BUFFER, internalformat, buffer.id());
+  }
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  // Write some internal variables
+  width_ = buffer.size(); height_ = 1;
+  levels_ = 1;
+
+  return *this;
+}
+
 
 [[using gnu: always_inline]]
 static constexpr auto GLSamplerParamName_to_pname(GLSampler::ParamName pname) -> GLEnum
@@ -393,7 +462,8 @@ void GLSampler::initGLObject()
   glGenSamplers(1, &id_);
 }
 
-GLTexImageUnit::GLTexImageUnit(unsigned slot) :
+GLTexImageUnit::GLTexImageUnit(GLContext *context, unsigned slot) :
+  context_(context),
   slot_(slot),
   bound_texture_(GLNullObject), bound_sampler_(GLNullObject)
 {
@@ -408,10 +478,18 @@ auto GLTexImageUnit::bind(const GLTexture& tex) -> GLTexImageUnit&
   // Only bind the texture if it's different than the current one
   if(bound_texture_ == tex_id) return *this;
 
-  glActiveTexture(GL_TEXTURE0 + slot_);
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glBindTextureUnit(slot_, tex_id);
+  } else {
+    glActiveTexture(GL_TEXTURE0 + slot_);
+    assert(glGetError() == GL_NO_ERROR);
+
+    context_->active_texture_ = slot_;
+
+    glBindTexture(tex.bindTarget(), tex_id);
+  }
   assert(glGetError() == GL_NO_ERROR);
 
-  glBindTexture(tex.bindTarget(), tex_id);
   bound_texture_ = tex_id;
 
   return *this;
@@ -419,7 +497,8 @@ auto GLTexImageUnit::bind(const GLTexture& tex) -> GLTexImageUnit&
 
 auto GLTexImageUnit::bind(const GLSampler& sampler) -> GLTexImageUnit&
 {
-  assert(sampler.id() != GLNullObject && "attempted to bind() a null sampler to a GLTexImageUnit!");
+  assert(sampler.id() != GLNullObject &&
+      "attempted to bind() a null sampler to a GLTexImageUnit!");
 
   auto sampler_id = sampler.id();
 
@@ -429,12 +508,19 @@ auto GLTexImageUnit::bind(const GLSampler& sampler) -> GLTexImageUnit&
   glBindSampler(slot_, sampler.id());
   bound_sampler_ = sampler.id();
 
+  assert(glGetError() == GL_NO_ERROR);
+
   return *this;
 }
 
 auto GLTexImageUnit::bind(const GLTexture& tex, const GLSampler& sampler) -> GLTexImageUnit&
 {
   return bind(tex), bind(sampler);
+}
+
+auto GLTexImageUnit::boundTexture() const -> GLObject
+{
+  return bound_texture_;
 }
 
 }

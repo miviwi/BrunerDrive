@@ -56,6 +56,8 @@ public:
   GLContext(const GLContext&) = delete;
   virtual ~GLContext();
 
+  static GLContext *current();
+
   // Acquires and initializes the GLContext
   virtual auto acquire(
       IWindow *window, GLContext *share = nullptr
@@ -78,6 +80,10 @@ public:
 
   auto texImageUnit(unsigned slot) -> GLTexImageUnit&;
 
+  // If ARB::direct_state_access || EXT::direct_state_access
+  //   this method always returns 0
+  auto activeTexture() const -> unsigned;
+
   auto bufferBindPoint(
       GLBufferBindPointType bind_point, unsigned index
     ) -> GLBufferBindPoint&;
@@ -89,10 +95,19 @@ public:
   auto version() -> GLVersion;
 
 protected:
+  // MUST be called by derived makeCurrent() right before they return!
+  void postMakeCurrentHook();
+
   bool was_acquired_;
 
 private:
+  friend GLTexImageUnit;
+  friend GLBufferBindPoint;
+
+
   GLTexImageUnit *tex_image_units_;        //   Array
+  unsigned active_texture_;
+
   GLBufferBindPoint *buffer_bind_points_;  // ---||---
 };
 
