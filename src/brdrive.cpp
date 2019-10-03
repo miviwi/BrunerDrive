@@ -20,6 +20,9 @@
 #include <x11/window.h>
 #include <x11/event.h>
 #include <x11/glx.h>
+#include <osd/osd.h>
+#include <osd/font.h>
+#include <osd/surface.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -55,23 +58,6 @@ auto load_font(const std::string& file_name) -> std::optional<std::vector<uint8_
   return std::move(font);
 }
 
-auto expand_1bpp_to_8bpp(const std::vector<uint8_t>& font) -> std::vector<uint8_t>
-{
-  std::vector<uint8_t> expanded;
-  expanded.reserve(font.size() * 8);
-
-  for(auto b : font) {
-    for(int i = 0; i < 8; i++) {
-      uint8_t pixel = (b >> 7)*0xFF;
-
-      expanded.push_back(pixel);
-      b <<= 1;
-    }
-  }
-
-  return std::move(expanded);
-}
-
 int main(int argc, char *argv[])
 {
   using namespace brdrive;
@@ -96,6 +82,7 @@ int main(int argc, char *argv[])
     .makeCurrent();
 
   gx_init();
+  osd_init();
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -274,12 +261,20 @@ void main()
     .source(R"COMPUTE(
 uniform writeonly image2D uiComputeOut;
 
+uniform float ufWavePeriod;
+
 layout(local_size_x=1, local_size_y=1, local_size_z=1) in;
 
 void main()
 {
   float work_group_x = float(gl_WorkGroupID.x) / 4096.0f;     // normalize to [0;1]
-  imageStore(uiComputeOut, ivec2(int(gl_WorkGroupID.x), 0), vec4(work_group_x, 0, 0, 1));
+
+  float wave_sin = sin(work_group_x * ufWavePeriod*(1.0f/2.0f));
+  float wave_cos = cos(work_group_x * ufWavePeriod);
+
+  vec2 wave = pow(vec2(wave_sin, wave_cos), vec2(2.0f));
+
+  imageStore(uiComputeOut, ivec2(int(gl_WorkGroupID.x), 0), vec4(wave, 0, 1));
 }
 )COMPUTE");
 
@@ -309,12 +304,13 @@ void main()
 
   GLTexture2D compute_output_tex;
   compute_output_tex
-    .alloc(4096, 1, 1, r32f);
+    .alloc(4096, 1, 1, rg32f);
 
-  glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+  glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG32F);
 
   compute_shader_program
-    .uniform("uiComputeOut", 0);
+    .uniform("uiComputeOut", gl_context.texImageUnit(0))
+    .uniform("ufWavePeriod", 1024.0f);
 
   std::chrono::high_resolution_clock clock;
   auto start = clock.now();
@@ -363,8 +359,8 @@ void main()
     .bind(string_tex_buf);
 
   gl_program
-    .uniform("usFontTopaz", 0)
-    .uniform("usString", 1);
+    .uniform("usFontTopaz", gl_context.texImageUnit(0))
+    .uniform("usString", gl_context.texImageUnit(1));
 
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
@@ -372,15 +368,15 @@ void main()
     return -1;
   }
 
-  auto topaz = expand_1bpp_to_8bpp(topaz_1bpp.value());
-  printf("topaz_1bpp.size()=%zu  topaz.size()=%zu\n", topaz_1bpp->size(), topaz.size());
+  auto topaz = OSDBitmapFont().loadBitmap1bpp(topaz_1bpp->data(), topaz_1bpp->size());
+  printf("topaz_1bpp.size()=%zu  topaz.size()=%zu\n", topaz_1bpp->size(), topaz.pixelDataSize());
 
   auto c = x11().connection<xcb_connection_t>();
 
   auto topaz_tex_pixel_buf = GLPixelBuffer(GLPixelBuffer::Upload);
 
   topaz_tex_pixel_buf
-    .alloc(topaz.size(), GLBuffer::StaticRead, topaz.data());
+    .alloc(topaz.pixelDataSize(), GLBuffer::StaticRead, topaz.pixelData());
 
   GLTexture2D topaz_tex;
 

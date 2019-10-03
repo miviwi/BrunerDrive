@@ -62,7 +62,8 @@ static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case r16f:  return GL_R16F;
   case rg16f: return GL_RG16F;
 
-  case r32f: return GL_R32F;
+  case r32f:  return GL_R32F;
+  case rg32f: return GL_RG32F;
 
   case r8i: return GL_R8I;
   case r8ui: return GL_R8UI;
@@ -192,7 +193,7 @@ auto GLTexture2D::alloc(
   ) -> GLTexture2D&
 {
   // Use direct state access if available
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
     glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -220,7 +221,7 @@ auto GLTexture2D::alloc(
   auto gl_internalformat = GLFormat_to_internalformat(internalformat);
   if(gl_internalformat == GL_INVALID_ENUM) throw InvalidFormatTypeError();
 
-  if(ARB::texture_storage()) {
+  if(ARB::texture_storage) {
     glTextureStorage2D(id_, levels, gl_internalformat, width, height);
   } else {
     // Save current texture for future retrieval
@@ -261,7 +262,7 @@ auto GLTexture2D::upload(
   if(gl_format == GL_INVALID_ENUM || gl_type == GL_INVALID_ENUM)
     throw InvalidFormatTypeError();
 
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glTextureSubImage2D(id_, level, 0, 0, width_, height_, gl_format, gl_type, data);
   } else {
     // Save current texture for future retrieval
@@ -516,6 +517,11 @@ auto GLTexImageUnit::bind(const GLSampler& sampler) -> GLTexImageUnit&
 auto GLTexImageUnit::bind(const GLTexture& tex, const GLSampler& sampler) -> GLTexImageUnit&
 {
   return bind(tex), bind(sampler);
+}
+
+auto GLTexImageUnit::texImageUnitIndex() const -> unsigned
+{
+  return slot_;
 }
 
 auto GLTexImageUnit::boundTexture() const -> GLObject

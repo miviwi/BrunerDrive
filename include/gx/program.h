@@ -9,8 +9,12 @@
 #include <unordered_map>
 #include <string_view>
 #include <optional>
+#include <tuple>
 
 namespace brdrive {
+
+// Forward declaration
+class GLTexImageUnit;
 
 class GLShader {
 public:
@@ -154,9 +158,28 @@ public:
     InvalidLocation = -1,
   };
 
+  enum UniformType {
+    InvalidType,
+
+    Int, UInt, Float,
+    IVec2, UIVec2, Vec2,
+    IVec3, UIVec3, Vec3,
+    IVec4, UIVec4, Vec4,
+    Mat3x3, Mat4x3, Mat4x4,
+
+    TexImageUnit,
+  };
+
   struct LinkError : public std::runtime_error {
     LinkError() :
       std::runtime_error("linking the GLProgram failed!")
+    { }
+  };
+
+  struct UniformTypeError : public std::runtime_error {
+    UniformTypeError() :
+      std::runtime_error("attempted to upload a uniform with"
+          " a different type than initially!")
     { }
   };
 
@@ -185,13 +208,19 @@ public:
   auto use() -> GLProgram&;
   
   auto uniform(const char *name, int i) -> GLProgram&;
+  auto uniform(const char *name, float f) -> GLProgram&;
+  auto uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLProgram&;
 
 private:
+  using UniformLocationType = std::tuple<UniformLocation, UniformType>;
+
+  auto uniformLocationType(const char *name, UniformType type) -> UniformLocationType;
+
   GLObject id_;
   bool linked_;
 
   // Lazy-initialized when uploading a uniform for the first time
-  std::unordered_map<std::string, UniformLocation> uniforms_;
+  std::unordered_map<std::string, UniformLocationType> uniforms_;
 };
 
 }

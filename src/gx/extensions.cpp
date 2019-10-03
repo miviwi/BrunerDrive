@@ -23,6 +23,7 @@ auto queryExtension(const char *name) -> bool
 {
   assert(gx_was_init() && "gx_init() must be called before this function can be used!");
 
+  [[using gnu: cold]] 
   if(g_num_extensions < 0) {    // Need to initialize the 'g_extensions' set
     glGetIntegerv(GL_NUM_EXTENSIONS, &g_num_extensions);
     assert(g_num_extensions >= 0);
@@ -43,7 +44,7 @@ auto queryExtension(const char *name) -> bool
 inline auto query_extension_cached(const char *name, int *ext) -> bool
 {
   // HOT path - the avilability of the extension has already been cached
-  if(*ext >= 0) return *ext;
+  [[using gnu: hot]] if(*ext >= 0) return *ext;
 
   // Need to query 'g_extensions'
   return *ext = queryExtension(name);

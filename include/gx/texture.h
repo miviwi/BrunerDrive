@@ -155,6 +155,8 @@ public:
   auto bind(const GLSampler& sampler) -> GLTexImageUnit&;
   auto bind(const GLTexture& tex, const GLSampler& sampler) -> GLTexImageUnit&;
 
+  auto texImageUnitIndex() const -> unsigned;
+
   auto boundTexture() const -> GLObject;
 
 private:

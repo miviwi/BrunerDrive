@@ -1,4 +1,5 @@
 #include <gx/program.h>
+#include <gx/texture.h>
 #include <gx/extensions.h>
 
 // OpenGL/gl3w
@@ -35,7 +36,7 @@ static auto shaderType_supported(GLShader::Type type) -> bool
   //   under the chosen minimum required GL version
   case GLShader::Vertex:       // Fallthrough
   case GLShader::Geometry:
-  case GLShader::Fragment:    return true;
+  case GLShader::Fragment: return true;
 
   // While the rest must be used via extensions - if desired
 
@@ -334,7 +335,7 @@ auto GLProgram::infoLog() const -> std::optional<std::string>
 
   assert(info_log_length >= 0);
 
-  if(!info_log_length) std::nullopt;
+  if(!info_log_length) return std::nullopt;
 
   std::string info_log(info_log_length, 0);
   glGetProgramInfoLog(id_, info_log.size(), nullptr, info_log.data());
@@ -364,21 +365,13 @@ auto GLProgram::uniform(const char *name, int i) -> GLProgram&
   assert(linked_ &&
     "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
 
-  UniformLocation location = InvalidLocation;
-  auto location_it = uniforms_.find(name);
-  if(location_it == uniforms_.end()) {
-    location = glGetUniformLocation(id_, name);
-
-    uniforms_.emplace(name, location);
-  } else {
-    location = location_it->second;
-  }
+  auto [location, _] = uniformLocationType(name, Int);
 
   // Avoid causing OpenGL errors
   if(location == InvalidLocation) return *this;
 
   // Use direct state access if it's available...
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
+  if(ARB::direct_state_access || EXT::direct_state_access) {
     glProgramUniform1i(id_, location, i);
   } else {     // ...and fall back to the old path otherwise
     glUseProgram(id_);
@@ -389,6 +382,75 @@ auto GLProgram::uniform(const char *name, int i) -> GLProgram&
   assert(glGetError() == GL_NO_ERROR);
 
   return *this;
+}
+
+auto GLProgram::uniform(const char *name, float f) -> GLProgram&
+{
+  assert(id_ != GLNullObject);
+  assert(linked_ &&
+    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
+
+  auto [location, _] = uniformLocationType(name, Float);
+
+  // Avoid causing OpenGL errors
+  if(location == InvalidLocation) return *this;
+
+  // Use direct state access if it's available...
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glProgramUniform1f(id_, location, f);
+  } else {     // ...and fall back to the old path otherwise
+    glUseProgram(id_);
+
+    glUniform1f(id_, f);
+  }
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
+}
+
+auto GLProgram::uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLProgram&
+{
+  assert(id_ != GLNullObject);
+  assert(linked_ &&
+    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
+
+  auto [location, _] = uniformLocationType(name, TexImageUnit);
+
+  // Avoid causing OpenGL errors
+  if(location == InvalidLocation) return *this;
+
+  // Use direct state access if it's available...
+  if(ARB::direct_state_access || EXT::direct_state_access) {
+    glProgramUniform1i(id_, location, tex_unit.texImageUnitIndex());
+  } else {     // ...and fall back to the old path otherwise
+    glUseProgram(id_);
+
+    glUniform1i(id_, tex_unit.texImageUnitIndex());
+  }
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
+}
+
+auto GLProgram::uniformLocationType(const char *name, UniformType type) -> UniformLocationType
+{
+  auto location_type = UniformLocationType(InvalidLocation, InvalidType);
+  auto uniform_it = uniforms_.find(name);
+  if(uniform_it == uniforms_.end()) {
+    // Location is being fetched for the first time -
+    //   so query OpenGL for it and cache it
+    auto location = glGetUniformLocation(id_, name);
+
+    auto [uniform_it_, _] = uniforms_.emplace(name, std::make_tuple(location, type));
+    uniform_it = uniform_it_;
+  }
+
+  auto [_, type_] = uniform_it->second;
+  if(type_ != type) throw UniformTypeError();
+
+  return uniform_it->second;   // Return the map value
 }
 
 }

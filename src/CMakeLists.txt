@@ -23,4 +23,10 @@ target_sources (BrunerDrive PRIVATE
   ${SrcDir}/x11/window.cpp
   ${SrcDir}/x11/event.cpp
   ${SrcDir}/x11/glx.cpp
+
+  # OSD specific sources
+  ${SrcDir}/osd/osd.cpp
+  ${SrcDir}/osd/font.cpp
+  ${SrcDir}/osd/drawcall.cpp
+  ${SrcDir}/osd/surface.cpp
 )
