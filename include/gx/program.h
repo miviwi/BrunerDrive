@@ -2,6 +2,8 @@
 
 #include <gx/gx.h>
 
+#include <cassert>
+
 #include <exception>
 #include <stdexcept>
 #include <string>
@@ -211,10 +213,46 @@ public:
   auto uniform(const char *name, float f) -> GLProgram&;
   auto uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLProgram&;
 
+  auto uniformVec(const char *name, float x, float y, float z) -> GLProgram&;
+
 private:
   using UniformLocationType = std::tuple<UniformLocation, UniformType>;
 
   auto uniformLocationType(const char *name, UniformType type) -> UniformLocationType;
+
+  // Usage:
+  //   has_dsa: always ARB::direct_state_access || EXT::direct_state_access
+  //   fn_dsa:  pointer to direct state acces version of the upload function
+  //      i.e. glProgramUniform*
+  //   fn_non_dsa: pointer to NON dsa version of the function i.e. glUniform*
+  //   location:   can be obtained from uniformLocationType()
+  //   args:       the value(s) to be uploaded
+  //
+  template <typename FnDSA, typename FnNonDSA, typename... Args>
+  auto uploadUniform(
+      bool has_dsa, FnDSA fn_dsa, FnNonDSA fn_non_dsa,
+      UniformLocation location, Args&&... args
+    ) -> GLProgram&
+  {
+    assert(id_ != GLNullObject);
+    assert(linked_ &&
+      "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
+
+    // Avoid causing OpenGL errors caused by uploading
+    //   uniforms which were optimized out (unused)
+    if(location == InvalidLocation) return *this;
+
+    // Use direct state access if it's available...
+    if(has_dsa) {
+      fn_dsa(id_, location, args...);
+    } else {     // ...and fall back to the old path otherwise
+      use();
+
+      fn_non_dsa(location, args...);
+    }
+
+    return *this;
+  }
 
   GLObject id_;
   bool linked_;

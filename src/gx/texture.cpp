@@ -65,8 +65,25 @@ static constexpr auto GLFormat_to_internalformat(GLFormat format) -> GLenum
   case r32f:  return GL_R32F;
   case rg32f: return GL_RG32F;
 
-  case r8i: return GL_R8I;
-  case r8ui: return GL_R8UI;
+  case r8i:   return GL_R8I;
+  case r8ui:  return GL_R8UI;
+  case r16i:  return GL_R16I;
+  case r16ui: return GL_R16UI;
+
+  case rg8i:   return GL_RG8I;
+  case rg8ui:  return GL_RG8UI;
+  case rg16i:  return GL_RG16I;
+  case rg16ui: return GL_RG16UI;
+
+  case rgb8i:   return GL_RGB8I;
+  case rgb8ui:  return GL_RGB8UI;
+  case rgb16i:  return GL_RGB16I;
+  case rgb16ui: return GL_RGB16UI;
+
+  case rgba8i:   return GL_RGBA8I;
+  case rgba8ui:  return GL_RGBA8UI;
+  case rgba16i:  return GL_RGBA16I;
+  case rgba16ui: return GL_RGBA16UI;
 
   case srgb8:    return GL_SRGB8;
   case srgb8_a8: return GL_SRGB8_ALPHA8;

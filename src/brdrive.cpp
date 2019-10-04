@@ -96,24 +96,39 @@ int main(int argc, char *argv[])
   GLShader frag(GLShader::Fragment);
 
   vert
-    .glslVersion(330)
     .source(R"VERT(
 layout(location = 0) in vec3 viColor;
 
 out Vertex {
+  vec3 Position;
   vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
   float Character;
 } vo;
 
+const float FontSize = 0.25f;
+
+// The positions of a single glyph's vertices
+//   at the screen's top-left corner
+const vec4 PositionsOffsetVector = vec4(vec2(0.5f*FontSize, 1.0f-FontSize), 0.0f, 0.0f);
 const vec4 Positions[4] = vec4[](
-  vec4(-1.0f, 0.25f, 0.1f, 1.0f),
-  vec4(-1.0f, 0.0f, 0.1f, 1.0f),
-  vec4(-0.875f, 0.0f, 0.1f, 1.0f),
-  vec4(-0.875f, 0.25f, 0.1f, 1.0f)
+  vec4(-1.0f, 1.0f, 0.0f, 1.0f),
+  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.wyww,
+  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.xyww,
+  vec4(-1.0f, 1.0f, 0.0f, 1.0f) + PositionsOffsetVector.xwww
 );
 
+// Positions of a full-screen quad's vertices
+const vec4 ScreenPositions[4] = vec4[](
+  vec4(-1.0f, +1.0f, 0.1f, 1.0f),
+  vec4(-1.0f, -1.0f, 0.1f, 1.0f),
+  vec4(+1.0f, -1.0f, 0.1f, 1.0f),
+  vec4(+1.0f, +1.0f, 0.1f, 1.0f)
+);
+
+// UV coordinates which encompass
+//   a single character in 'usFontTopaz'
 const vec2 UVs[4] = vec2[](
   vec2(0.0f, 0.0f/256.0f),
   vec2(0.0f, 1.0f/256.0f),
@@ -121,79 +136,97 @@ const vec2 UVs[4] = vec2[](
   vec2(1.0f, 0.0f/256.0f)
 );
 
+uniform isamplerBuffer usStrings;
+uniform isamplerBuffer usStringXYPositionsOffsetsLengths;
+
+// Gives an integer which is the index of the glyph
+//   currently being rendered
+int OffsetInString() { return gl_VertexID >> 2; }
+// Gives an integer in the range [0;3] which is an
+//   index of the current glyph's quad vertex
+//   starting from the top-left and advancing
+//   counter-clockwise
+int GlyphQuad_VertexID() { return gl_VertexID & 3; }
+
 const float ScreenAspect = 16.0f/9.0f;
+const vec2 InvResolution = vec2(1.0f/512.0f, -1.0f/512.0f);
 
-uniform isamplerBuffer usString;
+const float TexCharHeight = 255.0f/256.0f;
 
-int QuadVertexID()
-{
-  switch(gl_VertexID % 6) {
-  case 0: return 0;
-  case 1: return 1;
-  case 2: return 2;
-  case 3: return 2;
-  case 4: return 3;
-  case 5: return 0;
-  }
-
-  return -1;
-}
-
-const float CharHeight = 255.0f/256.0f;
+const vec2 ScreenCharDimensions = vec2(0.125f, 0.25f);
 
 void main()
 {
-  int character_num = gl_VertexID >> 2;
-  int vert_id = gl_VertexID & 3;
+  // Fetch the string's properties from a texture, that is:
+  //   * position (expressed in pixels with 0,0 at the top left corner)
+  //   * the offset in the usStrings texture at which the sitring's
+  //     characters can be found
+  //   * the string's length
+  //  and unpack them for convenient access
+  ivec4 string_xy_off_len = texelFetch(usStringXYPositionsOffsetsLengths, gl_InstanceID);
+  vec2 string_xy = vec2(string_xy_off_len.rg) * InvResolution;
+  int string_offset = string_xy_off_len.b;
+  int string_length = string_xy_off_len.a;
 
-  int char = texelFetch(usString, character_num).r;
-  float char_uv_offset = float(char) * CharHeight;
+  int string_character_num = OffsetInString();
+  int vert_id = GlyphQuad_VertexID();
 
+  // Because of instancing, more characters can be rendered
+  //   than there are in a given string, in the above case
+  //   cull the additional glyphs
+  if(string_character_num >= string_length) {
+    gl_Position = vec4(0.0f, 0.0f, 0.0f, -1.0f);
+    return;
+  }
+
+  // The index of the string's character being rendered
+  int character_num = string_offset + string_character_num;
+
+  int char = texelFetch(usStrings, character_num).r;
+  float char_t_offset = float(char) * TexCharHeight;
+
+  // Compute the offset of the glyph being rendered relative to the start of the string
+  vec2 glyph_advance = vec2(ivec2(string_character_num, -gl_InstanceID)) * ScreenCharDimensions;
+
+  // Compute the needed output data...
   vec4 pos = Positions[vert_id];
-  vec2 uv = UVs[vert_id] - vec2(0.0f, char_uv_offset);
-  vec3 screen_pos = vec3(pos.x * ScreenAspect, pos.yz);
+  vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
+  vec3 projected_pos = vec3(pos.x * ScreenAspect, pos.yz);
+  vec4 screen_pos = ScreenPositions[vert_id];
 
-  vo.ScreenPosition = screen_pos;
+  // ...and assign it
+  vo.Position = projected_pos;
+  vo.ScreenPosition = screen_pos.xyz;
   vo.Color = viColor;
   vo.UV = uv;
   vo.Character = char;
 
-  gl_Position = pos + vec4(float(character_num)*0.125f, 0.0f, 0.0f, 0.0f);
+  // Position the vertex according to the given offset
+  //   and posiiton in the string being rendered
+  gl_Position = pos + vec4(string_xy + glyph_advance, 0.0f, 0.0f);
 }
 )VERT")
   ;
 
-  frag.source(R"FRAG(
+  frag
+    .source(R"FRAG(
 in Vertex {
+  vec3 Position;
   vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
   float Character;
 } fi;
 
-out vec4 foFragColor;
+#if defined(NO_BLEND)
+#  define OUTPUT_CHANNELS vec3
+#else
+#  define OUTPUT_CHANNELS vec4
+#endif
+out OUTPUT_CHANNELS foFragColor;
 
 uniform sampler2D usFontTopaz;
-
-const float Pi = 3.14159;
-
-vec3 circle(float r, vec3 inside, vec3 outside)
-{
-  vec2 pos = fi.ScreenPosition.xy;
-
-  float d = pos.x*pos.x + pos.y*pos.y;
-  float mask = smoothstep(r - 0.005f, r + 0.005f, d);
-
-  return mix(inside, outside, mask);
-}
-
-vec3 checkerboard(vec2 offset, vec3 color_a, vec3 color_b)
-{
-  vec2 arg = fi.ScreenPosition.xy*2.0f*Pi + offset;
-  float checkers = sin(arg.x) * cos(arg.y);
-
-  return mix(color_a, color_b, step(0.0f, checkers));
-}
+uniform vec3 uvFontColor;
 
 void main()
 {
@@ -208,13 +241,20 @@ void main()
   const vec3 Black  = vec3(0.0f, 0.0f, 0.0f);
   const vec3 White  = vec3(1.0f, 1.0f, 1.0f);
 
-//  foFragColor = circle(Radius, Yellow, LBlue);
+  float glyph_sample = texture(usFontTopaz, fi.UV).r;
+  float alpha = glyph_sample;
+  float alpha_mask = 1.0f-glyph_sample;
 
-//  foFragColor = checkerboard(vec2(Pi/3.0f, 0.0f), Orange, Blue);
-    
-//  foFragColor = texture(usFontTopaz, (fi.UV+vec2(0, 7.0f))*vec2(4, 1.0f/32.0f)).rrrr;
-  foFragColor = texture(usFontTopaz, fi.UV).rrrr;
-//  foFragColor = vec4(fi.UV, 0.0f, 1.0f);
+  vec3 glyph_color = uvFontColor * glyph_sample;
+
+#if defined(NO_BLEND)
+  // Do the equivalent of an old-school alpha test (NOT - blend!)
+  if(alpha_mask < 0.0f) discard;
+
+  foFragColor = glyph_color;
+#else
+  foFragColor = vec4(glyph_color, alpha);
+#endif
 }
 )FRAG");
 
@@ -272,9 +312,11 @@ void main()
   float wave_sin = sin(work_group_x * ufWavePeriod*(1.0f/2.0f));
   float wave_cos = cos(work_group_x * ufWavePeriod);
 
+  float blue = (wave_sin < 0.0f) && (wave_cos < 0.0f) ? 1.0f : 0.0f;
+
   vec2 wave = pow(vec2(wave_sin, wave_cos), vec2(2.0f));
 
-  imageStore(uiComputeOut, ivec2(int(gl_WorkGroupID.x), 0), vec4(wave, 0, 1));
+  imageStore(uiComputeOut, ivec2(int(gl_WorkGroupID.x), 0), vec4(wave, blue, 1));
 }
 )COMPUTE");
 
@@ -304,9 +346,9 @@ void main()
 
   GLTexture2D compute_output_tex;
   compute_output_tex
-    .alloc(4096, 1, 1, rg32f);
+    .alloc(4096, 1, 1, rgba8);
 
-  glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG32F);
+  glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
 
   compute_shader_program
     .uniform("uiComputeOut", gl_context.texImageUnit(0))
@@ -336,12 +378,12 @@ void main()
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  const char topaz_test_string[] = "hello, sailor!";
-
+  const char topaz_test_string[] = "hello, world!ASDF1234567890";
   GLBufferTexture string_buf_tex;
   string_buf_tex
-    .alloc(sizeof(topaz_test_string), GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage);
-
+    .alloc(
+        sizeof(topaz_test_string), GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
+    );
   {
     auto string_buf_tex_mapping = string_buf_tex.map(
         GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
@@ -350,17 +392,42 @@ void main()
     memcpy(string_buf_tex_mapping.get(), topaz_test_string, sizeof(topaz_test_string));
   }
 
+  constexpr size_t num_strings = 2;
+  GLBufferTexture string_xy_off_len_buf_tex;
+  string_xy_off_len_buf_tex
+    .alloc(
+        sizeof(i16)*4*num_strings, GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
+    );
+  {
+    auto string_xy_off_len_buf_tex_mapping = string_xy_off_len_buf_tex.map(
+        GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
+    );
+
+    const i16 xy_offsets_lengths[] = { 10, 10, 0, 13, 256, 50, 13, 14 };
+    memcpy(string_xy_off_len_buf_tex_mapping.get(), xy_offsets_lengths, sizeof(xy_offsets_lengths));
+  }
+
   GLTextureBuffer string_tex_buf;
   string_tex_buf
     .buffer(r8i, string_buf_tex);
+
+  GLTextureBuffer string_xy_off_len_tex_buf;
+  string_xy_off_len_tex_buf
+    .buffer(rgba16i, string_xy_off_len_buf_tex);
 
   gl_context
     .texImageUnit(1)
     .bind(string_tex_buf);
 
+  gl_context
+    .texImageUnit(2)
+    .bind(string_xy_off_len_tex_buf);
+
   gl_program
     .uniform("usFontTopaz", gl_context.texImageUnit(0))
-    .uniform("usString", gl_context.texImageUnit(1));
+    .uniformVec("uvFontColor", 0.5f, 1.0f, 0.2f)
+    .uniform("usStrings", gl_context.texImageUnit(1))
+    .uniform("usStringXYPositionsOffsetsLengths", gl_context.texImageUnit(2));
 
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
@@ -403,7 +470,7 @@ void main()
   gl_context.texImageUnit(0)
     .bind(topaz_tex, topaz_tex_sampler);
 
-  u16 string_vert_indices[sizeof(topaz_test_string)*5];
+  u16 string_vert_indices[14*5];
   for(size_t i = 0; i < sizeof(string_vert_indices)/sizeof(u16); i++) {
     u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
 
@@ -460,7 +527,7 @@ void main()
   printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
   
   bool running = true;
-  bool change = true;
+  bool change = false;
   while(auto ev = event_loop.event(IEventLoop::Block)) {
     switch(ev->type()) {
     case Event::KeyDown: {
@@ -523,7 +590,9 @@ void main()
     glClear(GL_COLOR_BUFFER_BIT);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, text_index_buf.id());
-    glDrawElements(GL_TRIANGLE_FAN, sizeof(topaz_test_string)*5, GL_UNSIGNED_SHORT, (const void *)0);
+    glDrawElementsInstanced(
+        GL_TRIANGLE_FAN, 14*5, GL_UNSIGNED_SHORT, (const void *)0, 2
+    );
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
 /*

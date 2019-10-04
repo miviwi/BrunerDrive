@@ -361,23 +361,12 @@ auto GLProgram::use() -> GLProgram&
 
 auto GLProgram::uniform(const char *name, int i) -> GLProgram&
 {
-  assert(id_ != GLNullObject);
-  assert(linked_ &&
-    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
-
   auto [location, _] = uniformLocationType(name, Int);
 
-  // Avoid causing OpenGL errors
-  if(location == InvalidLocation) return *this;
-
-  // Use direct state access if it's available...
-  if(ARB::direct_state_access || EXT::direct_state_access) {
-    glProgramUniform1i(id_, location, i);
-  } else {     // ...and fall back to the old path otherwise
-    glUseProgram(id_);
-
-    glUniform1i(id_, i);
-  }
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniform1i, glUniform1i, location, i
+  );
 
   assert(glGetError() == GL_NO_ERROR);
 
@@ -386,23 +375,12 @@ auto GLProgram::uniform(const char *name, int i) -> GLProgram&
 
 auto GLProgram::uniform(const char *name, float f) -> GLProgram&
 {
-  assert(id_ != GLNullObject);
-  assert(linked_ &&
-    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
-
   auto [location, _] = uniformLocationType(name, Float);
 
-  // Avoid causing OpenGL errors
-  if(location == InvalidLocation) return *this;
-
-  // Use direct state access if it's available...
-  if(ARB::direct_state_access || EXT::direct_state_access) {
-    glProgramUniform1f(id_, location, f);
-  } else {     // ...and fall back to the old path otherwise
-    glUseProgram(id_);
-
-    glUniform1f(id_, f);
-  }
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniform1f, glUniform1f, location, f
+  );
 
   assert(glGetError() == GL_NO_ERROR);
 
@@ -411,23 +389,26 @@ auto GLProgram::uniform(const char *name, float f) -> GLProgram&
 
 auto GLProgram::uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLProgram&
 {
-  assert(id_ != GLNullObject);
-  assert(linked_ &&
-    "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
-
   auto [location, _] = uniformLocationType(name, TexImageUnit);
 
-  // Avoid causing OpenGL errors
-  if(location == InvalidLocation) return *this;
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniform1i, glUniform1i, location, tex_unit.texImageUnitIndex()
+  );
 
-  // Use direct state access if it's available...
-  if(ARB::direct_state_access || EXT::direct_state_access) {
-    glProgramUniform1i(id_, location, tex_unit.texImageUnitIndex());
-  } else {     // ...and fall back to the old path otherwise
-    glUseProgram(id_);
+  assert(glGetError() == GL_NO_ERROR);
 
-    glUniform1i(id_, tex_unit.texImageUnitIndex());
-  }
+  return *this;
+}
+
+auto GLProgram::uniformVec(const char *name, float x, float y, float z) -> GLProgram&
+{
+  auto [location, _] = uniformLocationType(name, Vec3);
+
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniform3f, glUniform3f, location, x, y, z
+  );
 
   assert(glGetError() == GL_NO_ERROR);
 
