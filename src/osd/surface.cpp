@@ -1,5 +1,6 @@
 #include <osd/surface.h>
 #include <osd/font.h>
+#include <osd/drawcall.h>
 
 #include <gx/gx.h>
 #include <gx/program.h>
@@ -11,18 +12,22 @@
 namespace brdrive {
 
 // Initialized during osd_init()
-GLProgram *OSDSurface::s_surface_program = nullptr;
+GLProgram **OSDSurface::s_surface_programs = nullptr;
 
 OSDSurface::OSDSurface() :
   dimensions_(ivec2::zero()),
   font_(nullptr),
   bg_(Color::transparent()),
-  created_(false)
+  created_(false),
+  drawcalls_(nullptr), num_drawcalls_(DrawcallInitialReserve)
 {
 }
 
 OSDSurface::~OSDSurface()
 {
+  if(!drawcalls_) return;
+
+  delete[] drawcalls_;
 }
 
 auto OSDSurface::create(
@@ -31,12 +36,14 @@ auto OSDSurface::create(
 {
   assert((width_height.x > 0) && (width_height.y > 0) &&
       "width and height must be positive integers!");
-  assert(s_surface_program &&
+  assert(s_surface_programs &&
       "osd_init() MUST be called prior to creating any OSDSurfaces!");
 
   dimensions_ = width_height;
   font_ = font;
   bg_ = bg;
+
+  drawcalls_ = new OSDDrawCall[num_drawcalls_];
 
   // TODO: also acquire all the prerequisite OpenGL objects here
 
@@ -56,5 +63,19 @@ auto OSDSurface::writeString(ivec2 pos, const char *string) -> OSDSurface&
   return *this;
 }
 
+auto OSDSurface::renderProgram(int draw_type) -> GLProgram&
+{
+  assert(s_surface_programs &&
+      "attempted to render a surface before calling osd_init()!");
+      
+  assert((draw_type > OSDDrawCall::DrawTypeInvalid && draw_type < OSDDrawCall::NumDrawTypes) &&
+      "the given 'draw_type' is invalid!");
+
+  assert((s_surface_programs[draw_type] && s_surface_programs[draw_type]->linked()) &&
+      "attempted to render a surface without calling osd_init()!");
+
+  // Return a GLProgram* or 'nullptr' if the drawcall is a no-op/invalid
+  return *s_surface_programs[draw_type];
+}
 
 }

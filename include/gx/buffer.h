@@ -147,6 +147,9 @@ public:
 
   auto upload(const void *data) -> GLBuffer&;
 
+  auto bind() -> GLBuffer&;
+  auto unbind() -> GLBuffer&;
+
   // Only ONE mapping of a given buffer may exist at a time!
   auto map(u32 /* Flags */ flags, intptr_t offset = 0, GLSizePtr size = 0) -> GLBufferMapping;
 

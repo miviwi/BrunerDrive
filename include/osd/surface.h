@@ -6,6 +6,7 @@
 
 #include <exception>
 #include <stdexcept>
+#include <memory>
 
 namespace brdrive {
 
@@ -46,18 +47,30 @@ public:
 
   auto writeString(ivec2 pos, const char *string) -> OSDSurface&;
 
+  static auto renderProgram(int /* OSDDrawCall::DrawType */ draw_type) -> GLProgram&;
+
 private:
   // Functions that manage static class member creation/destruction
   friend void osd_init();
   friend void osd_finalize();
 
-  static GLProgram *s_surface_program;
+  enum {
+    DrawcallInitialReserve = 256,
+  };
+
+  // Array of GLProgram *[OSDDrawCall::NumDrawTypes]
+  //   - NOTE: pointers in this array CAN be nullptr
+  //      (done for ease of indexing)
+  static GLProgram **s_surface_programs;
 
   ivec2 dimensions_;
   const OSDBitmapFont *font_;
   Color bg_;
 
   bool created_;
+
+  OSDDrawCall *drawcalls_;
+  size_t num_drawcalls_;
 };
 
 }

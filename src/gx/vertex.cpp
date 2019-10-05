@@ -612,4 +612,11 @@ auto GLVertexArray::bind() -> GLVertexArray&
   return *this;
 }
 
+auto GLVertexArray::unbind() -> GLVertexArray&
+{
+  glBindVertexArray(0);
+
+  return *this;
+}
+
 }

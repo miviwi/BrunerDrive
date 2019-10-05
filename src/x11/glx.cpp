@@ -42,6 +42,14 @@ using glXCreateContextAttribsARBFn = ::GLXContext (*)(
 static bool g_createcontextattribs_queried = false;
 static glXCreateContextAttribsARBFn glXCreateContextAttribsARB = nullptr;
 
+// ...Same with glXSwapIntervalEXT
+using glXSwapIntervalEXTFn = void (*)(
+    Display *dpy, GLXDrawable drawable, int interval
+  );
+
+static bool g_swapinterval_queried = false;
+static glXSwapIntervalEXTFn glXSwapIntervalEXT = nullptr;
+
 struct pGLXContext {
   Display *display;
 
@@ -73,6 +81,11 @@ auto pGLXContext::createContext(
   if(!g_createcontextattribs_queried) {
     glXCreateContextAttribsARB = (glXCreateContextAttribsARBFn)
       glXGetProcAddressARB((const GLubyte *)"glXCreateContextAttribsARB");
+  }
+
+  if(!g_swapinterval_queried) {
+    glXSwapIntervalEXT = (glXSwapIntervalEXTFn)
+      glXGetProcAddressARB((const GLubyte *)"glXSwapIntervalEXT");
   }
 
   // Only old-style contexts are available 
@@ -188,6 +201,8 @@ auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
 
     throw AcquireError();
   }
+
+  glXSwapIntervalEXT(display, p->window, 1);
 
   cleanup_x_structures();
 

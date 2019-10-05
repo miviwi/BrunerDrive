@@ -27,6 +27,7 @@ target_sources (BrunerDrive PRIVATE
   # OSD specific sources
   ${SrcDir}/osd/osd.cpp
   ${SrcDir}/osd/font.cpp
+  ${SrcDir}/osd/shaders.cpp
   ${SrcDir}/osd/drawcall.cpp
   ${SrcDir}/osd/surface.cpp
 )

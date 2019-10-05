@@ -164,6 +164,20 @@ auto GLBuffer::upload(const void *data) -> GLBuffer&
   return *this;
 }
 
+auto GLBuffer::bind() -> GLBuffer&
+{
+  bindSelf();
+
+  return *this;
+}
+
+auto GLBuffer::unbind() -> GLBuffer&
+{
+  unbindSelf();
+
+  return *this;
+}
+
 auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMapping
 {
   assert(id_ != GLNullObject && "attempted to map a null buffer!");

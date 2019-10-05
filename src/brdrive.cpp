@@ -22,6 +22,7 @@
 #include <x11/glx.h>
 #include <osd/osd.h>
 #include <osd/font.h>
+#include <osd/drawcall.h>
 #include <osd/surface.h>
 
 #include <unistd.h>
@@ -91,207 +92,6 @@ int main(int argc, char *argv[])
     .dbg_EnableMessages();
 
   printf("OpenGL %s\n\n", gl_context.versionString().data());
-
-  GLShader vert(GLShader::Vertex);
-  GLShader frag(GLShader::Fragment);
-
-  vert
-    .source(R"VERT(
-layout(location = 0) in vec3 viColor;
-
-out Vertex {
-  vec3 Position;
-  vec3 ScreenPosition;
-  vec3 Color;
-  vec2 UV;
-  float Character;
-} vo;
-
-const float FontSize = 0.25f;
-
-// The positions of a single glyph's vertices
-//   at the screen's top-left corner
-const vec4 PositionsOffsetVector = vec4(vec2(0.5f*FontSize, 1.0f-FontSize), 0.0f, 0.0f);
-const vec4 Positions[4] = vec4[](
-  vec4(-1.0f, 1.0f, 0.0f, 1.0f),
-  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.wyww,
-  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.xyww,
-  vec4(-1.0f, 1.0f, 0.0f, 1.0f) + PositionsOffsetVector.xwww
-);
-
-// Positions of a full-screen quad's vertices
-const vec4 ScreenPositions[4] = vec4[](
-  vec4(-1.0f, +1.0f, 0.1f, 1.0f),
-  vec4(-1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, +1.0f, 0.1f, 1.0f)
-);
-
-// UV coordinates which encompass
-//   a single character in 'usFontTopaz'
-const vec2 UVs[4] = vec2[](
-  vec2(0.0f, 0.0f/256.0f),
-  vec2(0.0f, 1.0f/256.0f),
-  vec2(1.0f, 1.0f/256.0f),
-  vec2(1.0f, 0.0f/256.0f)
-);
-
-uniform isamplerBuffer usStrings;
-uniform isamplerBuffer usStringXYPositionsOffsetsLengths;
-
-// Gives an integer which is the index of the glyph
-//   currently being rendered
-int OffsetInString() { return gl_VertexID >> 2; }
-// Gives an integer in the range [0;3] which is an
-//   index of the current glyph's quad vertex
-//   starting from the top-left and advancing
-//   counter-clockwise
-int GlyphQuad_VertexID() { return gl_VertexID & 3; }
-
-const float ScreenAspect = 16.0f/9.0f;
-const vec2 InvResolution = vec2(1.0f/512.0f, -1.0f/512.0f);
-
-const float TexCharHeight = 255.0f/256.0f;
-
-const vec2 ScreenCharDimensions = vec2(0.125f, 0.25f);
-
-void main()
-{
-  // Fetch the string's properties from a texture, that is:
-  //   * position (expressed in pixels with 0,0 at the top left corner)
-  //   * the offset in the usStrings texture at which the sitring's
-  //     characters can be found
-  //   * the string's length
-  //  and unpack them for convenient access
-  ivec4 string_xy_off_len = texelFetch(usStringXYPositionsOffsetsLengths, gl_InstanceID);
-  vec2 string_xy = vec2(string_xy_off_len.rg) * InvResolution;
-  int string_offset = string_xy_off_len.b;
-  int string_length = string_xy_off_len.a;
-
-  int string_character_num = OffsetInString();
-  int vert_id = GlyphQuad_VertexID();
-
-  // Because of instancing, more characters can be rendered
-  //   than there are in a given string, in the above case
-  //   cull the additional glyphs
-  if(string_character_num >= string_length) {
-    gl_Position = vec4(0.0f, 0.0f, 0.0f, -1.0f);
-    return;
-  }
-
-  // The index of the string's character being rendered
-  int character_num = string_offset + string_character_num;
-
-  int char = texelFetch(usStrings, character_num).r;
-  float char_t_offset = float(char) * TexCharHeight;
-
-  // Compute the offset of the glyph being rendered relative to the start of the string
-  vec2 glyph_advance = vec2(ivec2(string_character_num, -gl_InstanceID)) * ScreenCharDimensions;
-
-  // Compute the needed output data...
-  vec4 pos = Positions[vert_id];
-  vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
-  vec3 projected_pos = vec3(pos.x * ScreenAspect, pos.yz);
-  vec4 screen_pos = ScreenPositions[vert_id];
-
-  // ...and assign it
-  vo.Position = projected_pos;
-  vo.ScreenPosition = screen_pos.xyz;
-  vo.Color = viColor;
-  vo.UV = uv;
-  vo.Character = char;
-
-  // Position the vertex according to the given offset
-  //   and posiiton in the string being rendered
-  gl_Position = pos + vec4(string_xy + glyph_advance, 0.0f, 0.0f);
-}
-)VERT")
-  ;
-
-  frag
-    .source(R"FRAG(
-in Vertex {
-  vec3 Position;
-  vec3 ScreenPosition;
-  vec3 Color;
-  vec2 UV;
-  float Character;
-} fi;
-
-#if defined(NO_BLEND)
-#  define OUTPUT_CHANNELS vec3
-#else
-#  define OUTPUT_CHANNELS vec4
-#endif
-out OUTPUT_CHANNELS foFragColor;
-
-uniform sampler2D usFontTopaz;
-uniform vec3 uvFontColor;
-
-void main()
-{
-  const float Radius = 0.5f;
-
-  const vec3 Red    = vec3(1.0f, 0.0f, 0.0f);
-  const vec3 Blue   = vec3(0.08f, 0.4f, 0.75f);
-  const vec3 LBlue  = vec3(0.4f, 0.7f, 0.96f);
-  const vec3 Yellow = vec3(1.0f, 1.0f, 0.0f);
-  const vec3 Lime   = vec3(0.75f, 1.0f, 0.0f);
-  const vec3 Orange = vec3(1.0f, 0.4f, 0.0f);
-  const vec3 Black  = vec3(0.0f, 0.0f, 0.0f);
-  const vec3 White  = vec3(1.0f, 1.0f, 1.0f);
-
-  float glyph_sample = texture(usFontTopaz, fi.UV).r;
-  float alpha = glyph_sample;
-  float alpha_mask = 1.0f-glyph_sample;
-
-  vec3 glyph_color = uvFontColor * glyph_sample;
-
-#if defined(NO_BLEND)
-  // Do the equivalent of an old-school alpha test (NOT - blend!)
-  if(alpha_mask < 0.0f) discard;
-
-  foFragColor = glyph_color;
-#else
-  foFragColor = vec4(glyph_color, alpha);
-#endif
-}
-)FRAG");
-
-  try {
-    vert.compile();
-    frag.compile();
-  } catch(const std::exception& e) {
-    auto vert_info_log = vert.infoLog();
-    auto frag_info_log = frag.infoLog();
-
-    if(vert_info_log) {
-      puts(vert_info_log->data());
-    }
-
-    if(frag_info_log) {
-      puts(frag_info_log->data());
-    }
-
-    return -2;
-  }
-
-  GLProgram gl_program;
-
-  gl_program
-    .attach(vert)
-    .attach(frag);
-
-  try {
-    gl_program.link();
-  } catch(const std::exception& e) {
-    puts(gl_program.infoLog()->data());
-    return -2;
-  }
-
-  gl_program
-    .detach(vert)
-    .detach(frag);
 
   GLProgram compute_shader_program;
 
@@ -364,8 +164,8 @@ void main()
 
   auto ms_counts = std::chrono::milliseconds(1).count(); 
 
-  printf("\ncompute_shader_program took: %dus\n\n",
-      std::chrono::duration_cast<std::chrono::microseconds>(end-start));
+  printf("\ncompute_shader_program took: %ldus\n\n",
+      std::chrono::duration_cast<std::chrono::microseconds>(end-start).count());
 
   GLFence compute_fence;
   compute_fence
@@ -396,14 +196,14 @@ void main()
   GLBufferTexture string_xy_off_len_buf_tex;
   string_xy_off_len_buf_tex
     .alloc(
-        sizeof(i16)*4*num_strings, GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
+        sizeof(u16)*4*num_strings, GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
     );
   {
     auto string_xy_off_len_buf_tex_mapping = string_xy_off_len_buf_tex.map(
         GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
     );
 
-    const i16 xy_offsets_lengths[] = { 10, 10, 0, 13, 256, 50, 13, 14 };
+    const u16 xy_offsets_lengths[] = { 10, 10, 0, 13, 256, 50, 13, 14 };
     memcpy(string_xy_off_len_buf_tex_mapping.get(), xy_offsets_lengths, sizeof(xy_offsets_lengths));
   }
 
@@ -415,20 +215,6 @@ void main()
   string_xy_off_len_tex_buf
     .buffer(rgba16i, string_xy_off_len_buf_tex);
 
-  gl_context
-    .texImageUnit(1)
-    .bind(string_tex_buf);
-
-  gl_context
-    .texImageUnit(2)
-    .bind(string_xy_off_len_tex_buf);
-
-  gl_program
-    .uniform("usFontTopaz", gl_context.texImageUnit(0))
-    .uniformVec("uvFontColor", 0.5f, 1.0f, 0.2f)
-    .uniform("usStrings", gl_context.texImageUnit(1))
-    .uniform("usStringXYPositionsOffsetsLengths", gl_context.texImageUnit(2));
-
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
     puts("couldn't load font file `Topaz.raw'!");
@@ -437,6 +223,7 @@ void main()
 
   auto topaz = OSDBitmapFont().loadBitmap1bpp(topaz_1bpp->data(), topaz_1bpp->size());
   printf("topaz_1bpp.size()=%zu  topaz.size()=%zu\n", topaz_1bpp->size(), topaz.pixelDataSize());
+  fflush(stdout);
 
   auto c = x11().connection<xcb_connection_t>();
 
@@ -467,9 +254,6 @@ void main()
     .iParam(GLSampler::MinFilter, GLSampler::Nearset)
     .iParam(GLSampler::MagFilter, GLSampler::Nearset);
 
-  gl_context.texImageUnit(0)
-    .bind(topaz_tex, topaz_tex_sampler);
-
   u16 string_vert_indices[14*5];
   for(size_t i = 0; i < sizeof(string_vert_indices)/sizeof(u16); i++) {
     u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
@@ -483,9 +267,6 @@ void main()
 
   glEnable(GL_PRIMITIVE_RESTART);
   glPrimitiveRestartIndex(0xFFFF);
-
-  gl_program
-    .use();
 
   GLVertexFormat color_vertex_format;
 
@@ -519,16 +300,16 @@ void main()
     .bindVertexBuffer(0, color_data_buf)
     .createVertexArray();
 
-  vertex_array
-    .bind();
-
   topaz_tex_uploaded
     .block(1);
   printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
   
   bool running = true;
   bool change = false;
+  bool use_fence = false;
   while(auto ev = event_loop.event(IEventLoop::Block)) {
+    bool use_fence_initial = use_fence;
+
     switch(ev->type()) {
     case Event::KeyDown: {
       auto event = (IKeyEvent *)ev.get();
@@ -549,6 +330,8 @@ void main()
         memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
         change = false;
       }
+
+      if(sym == 'f') use_fence = !use_fence;
       break;
     }
 
@@ -589,44 +372,32 @@ void main()
 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, text_index_buf.id());
-    glDrawElementsInstanced(
-        GL_TRIANGLE_FAN, 14*5, GL_UNSIGNED_SHORT, (const void *)0, 2
+    auto drawcall = osd_drawcall_strings(
+        &vertex_array, GLType::u16, &text_index_buf, 0,
+        14, 2,
+        &topaz_tex, &topaz_tex_sampler,
+        &string_tex_buf, &string_xy_off_len_tex_buf
     );
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        
+    osd_submit_drawcall(gl_context, drawcall);
 
-/*
-    for(int i = 0; i < 32; i++) {
-      float x1 = ((48.0f * (float)i) / 960.0f)-1.0f;
-      float x2 = ((48.0f * (float)(i+1)) / 960.0f)-1.0f;
-      float v1 = (float)i * (128.0f/4096.0f);
-      float v2 = (float)(i+1) * (128.0f/4096.0f);
 
-      //printf("x1=%f x2=%f v1=%f v2=%f\n", x1, x2, v1, v2);
-
-      glBegin(GL_TRIANGLE_FAN);
-
-      //glColor3f(0.0f, 1.0f, 0.0f);
-      glTexCoord2f(0.0f, v1);
-      glVertex2f(x1, 1.0f);
-
-      //glColor3f(0.0f, 0.0f, 1.0f);
-      glTexCoord2f(0.0f, v2);
-      glVertex2f(x1, -1.0f);
-
-      //glColor3f(1.0f, 1.0f, 0.0f);
-      glTexCoord2f(1.0f, v2);
-      glVertex2f(x2, -1.0f);
-
-      //glColor3f(0.0f, 1.0f, 1.0f);
-      glTexCoord2f(1.0f, v1);
-      glVertex2f(x2, 1.0f);
-
-      glEnd();
-    }
-    */
+    std::chrono::high_resolution_clock clock;
+    auto start = clock.now();
 
     gl_context.swapBuffers();
+
+    auto end = clock.now();
+
+    auto ms_counts = std::chrono::milliseconds(1).count(); 
+
+    if(use_fence_initial != use_fence && !use_fence) {
+      printf("\nswapBuffers() without blocking on a fence took: %ldus\n\n",
+          std::chrono::duration_cast<std::chrono::microseconds>(end-start).count());
+    } else if(use_fence_initial) {
+      printf("\nswapBuffers() AFTER BLOCKING on a fence took: %ldus\n\n",
+          std::chrono::duration_cast<std::chrono::microseconds>(end-start).count());
+    }
 
     if(!running) break;
   }

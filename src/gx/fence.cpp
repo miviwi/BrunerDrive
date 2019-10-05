@@ -5,12 +5,22 @@
 
 #include <cassert>
 
+#include <algorithm>
+#include <utility>
+
 namespace brdrive {
 
 GLFence::GLFence() :
   sync_(nullptr),
   flushed_(false)
 {
+}
+
+GLFence::GLFence(GLFence&& other) :
+  GLFence()
+{
+  std::swap(sync_, other.sync_);
+  std::swap(flushed_, other.flushed_);
 }
 
 GLFence::~GLFence()

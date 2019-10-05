@@ -326,6 +326,11 @@ auto GLProgram::link() -> GLProgram&
   return *this;
 }
 
+auto GLProgram::linked() const -> bool
+{
+  return linked_;
+}
+
 auto GLProgram::infoLog() const -> std::optional<std::string>
 {
   if(id_ == GLNullObject) return std::nullopt;

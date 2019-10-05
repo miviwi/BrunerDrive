@@ -292,6 +292,8 @@ public:
   //   is made
   auto bind() -> GLVertexArray&;
 
+  auto unbind() -> GLVertexArray&;
+
 private:
   friend GLVertexFormat;
 

@@ -28,6 +28,7 @@ public:
 
   GLFence();
   GLFence(const GLFence&) = delete;
+  GLFence(GLFence&& other);
   ~GLFence();
 
   auto fence() -> GLFence&;
