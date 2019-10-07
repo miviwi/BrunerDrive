@@ -37,6 +37,12 @@ public:
     raw_ = rgb.get();
   }
 
+  Color(const Color& other) :
+    Color()
+  {
+    raw_ = other.raw_;
+  }
+
   static auto transparent() -> Color { return { 0_u8, 0_u8, 0_u8, 0_u8 }; }
   static auto black() -> Color { return { 0_u8, 0_u8, 0_u8 }; }
   static auto white() -> Color { return { 255_u8, 255_u8, 255_u8 }; }

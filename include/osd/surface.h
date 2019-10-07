@@ -1,11 +1,14 @@
 #pragma once
 
 #include <osd/osd.h>
+
 #include <window/geometry.h>
 #include <window/color.h>
+#include <gx/handle.h>
 
 #include <exception>
 #include <stdexcept>
+#include <vector>
 #include <memory>
 
 namespace brdrive {
@@ -13,15 +16,19 @@ namespace brdrive {
 // Forward declarations
 class OSDBitmapFont;
 class OSDDrawCall;
+class GLVertexArray;
 class GLProgram;
 class GLTexture;
 class GLTexture2D;
 class GLTextureBuffer;
+class GLSampler;
 class GLBuffer;
 class GLBufferTexture;
+class GLIndexBuffer;
 class GLPixelBuffer;
 
-using ivec2 = Vec2<int>;
+// PIMPL struct
+struct pOSDSurface;
 
 class OSDSurface {
 public:
@@ -45,7 +52,9 @@ public:
       const Color& bg = Color::transparent()
   ) -> OSDSurface&;
 
-  auto writeString(ivec2 pos, const char *string) -> OSDSurface&;
+  auto writeString(ivec2 pos, const char *string, const Color& color) -> OSDSurface&;
+
+  auto draw() -> std::vector<OSDDrawCall>;
 
   static auto renderProgram(int /* OSDDrawCall::DrawType */ draw_type) -> GLProgram&;
 
@@ -58,6 +67,13 @@ private:
     DrawcallInitialReserve = 256,
   };
 
+  void initGLObjects();
+
+  // Call only if create() was called with a font
+  void initFontGLObjects();
+
+  void appendStringDrawcalls();
+
   // Array of GLProgram *[OSDDrawCall::NumDrawTypes]
   //   - NOTE: pointers in this array CAN be nullptr
   //      (done for ease of indexing)
@@ -69,8 +85,25 @@ private:
 
   bool created_;
 
-  OSDDrawCall *drawcalls_;
-  size_t num_drawcalls_;
+  // String related data structures
+  struct StringObject {
+    ivec2 position;
+    std::string str;
+    Color color;
+  };
+
+  std::vector<StringObject> string_objects_;
+
+  // Generic gx objects (used for drawing everything)
+  GLVertexArrayHandle empty_vertex_array_;
+  GLIndexBuffer *surface_object_inds_;
+
+  // String-related gx objects
+  GLTexture2D *font_tex_;
+  GLSampler *font_sampler_;
+
+  GLTextureBuffer *strings_;
+  GLTextureBuffer *strings_xy_off_len_;
 };
 
 }

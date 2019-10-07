@@ -31,6 +31,8 @@ public:
   GLFence(GLFence&& other);
   ~GLFence();
 
+  auto operator=(GLFence&& other) -> GLFence&;
+
   auto fence() -> GLFence&;
 
   // Causes the program's execution to halt until

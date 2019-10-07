@@ -12,6 +12,7 @@ namespace brdrive {
 // Forward declarations
 class GLVertexBuffer;
 class GLVertexArray;
+class GLVertexArrayHandle;
 
 struct GLVertexFormatAttr {
   enum Type : u16 {
@@ -182,6 +183,10 @@ public:
   //    possible
   auto createVertexArray() const -> GLVertexArray;
 
+  // The same as createVertexArray(), except a heap
+  //   pointer is returned instead of a stack object
+  auto newVertexArray() const -> GLVertexArrayHandle;
+
   // Must be called BEFORE createVertexArray() to take effect
   void dbg_ForceVertexArrayCreatePath(int path);
 
@@ -272,8 +277,10 @@ public:
   };
 
   GLVertexArray(const GLVertexArray&) = delete;
-  GLVertexArray(GLVertexArray&&);
+  GLVertexArray(GLVertexArray&& other);
   ~GLVertexArray();
+
+  auto operator=(GLVertexArray&& other) -> GLVertexArray&;
 
   auto id() const -> GLObject;
 

@@ -28,4 +28,6 @@ struct Vec2 {
   }
 };
 
+using ivec2 = Vec2<int>;
+
 }

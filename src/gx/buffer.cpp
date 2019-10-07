@@ -9,6 +9,8 @@
 
 #include <cassert>
 
+#include <new>
+
 namespace brdrive {
 
 [[using gnu: always_inline]]

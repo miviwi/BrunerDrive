@@ -159,6 +159,7 @@ GLTexture::~GLTexture()
   if(id_ == GLNullObject) return;
 
   glDeleteTextures(1, &id_);
+  id_ = GLNullObject;   // So implicit operator=(GLTexture&&) works properly
 }
 
 auto GLTexture::id() const -> GLObject
@@ -436,6 +437,7 @@ GLSampler::~GLSampler()
   if(id_ == GLNullObject) return;
 
   glDeleteSamplers(1, &id_);
+  id_ = GLNullObject;   // So implicit operator=(GLSampler&&) works properly
 }
 
 auto GLSampler::id() const -> GLObject

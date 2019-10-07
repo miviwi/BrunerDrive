@@ -1,8 +1,11 @@
 #pragma once
 
-#include <types.h>
+#include <osd/osd.h>
+
+#include <window/geometry.h>
 
 #include <vector>
+#include <optional>
 
 namespace brdrive {
 
@@ -10,7 +13,7 @@ enum ExtendedCharacter : u8 {
 
 };
 
-struct FontGlyph {
+struct OSDBitmapFontGlyph {
 };
 
 class OSDBitmapFont {
@@ -22,6 +25,15 @@ public:
 
   auto pixelData() const -> const u8 *;
   auto pixelDataSize() const -> size_t;
+
+  auto numGlyphs() const -> size_t;
+
+  // In units of pixels
+  auto glyphDimensions() const -> ivec2;
+
+  // In units of glyphs - i.e. the whole bitmap's size is:
+  //     glyphDimensions()*glyphGridLayoutDimensions()
+  auto glyphGridLayoutDimensions() const -> ivec2;
 
 private:
   // The font's pixels expanded to an 8bpp format

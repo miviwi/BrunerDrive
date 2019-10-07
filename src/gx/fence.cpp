@@ -30,6 +30,17 @@ GLFence::~GLFence()
   glDeleteSync((GLsync)sync_);
 }
 
+auto GLFence::operator=(GLFence&& other) -> GLFence&
+{
+  this->~GLFence();
+  sync_ = nullptr; flushed_ = false;
+
+  std::swap(sync_, other.sync_);
+  std::swap(flushed_, other.flushed_);
+
+  return *this;
+}
+
 auto GLFence::fence() -> GLFence&
 {
   sync_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);

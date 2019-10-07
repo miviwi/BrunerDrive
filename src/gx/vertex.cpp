@@ -1,14 +1,17 @@
 #include <gx/vertex.h>
 #include <gx/extensions.h>
 #include <gx/buffer.h>
+#include <gx/handle.h>
 
 // OpenGL/gl3w
 #include <GL/gl3w.h>
 
+#include <cassert>
+#include <cstdlib>
+
+#include <new>
 #include <algorithm>
 #include <utility>
-
-#include <cassert>
 
 namespace brdrive {
 
@@ -259,6 +262,11 @@ auto GLVertexFormat::createVertexArray() const -> GLVertexArray
   return createVertexArray_vertex_array_object();
 }
 
+auto GLVertexFormat::newVertexArray() const -> GLVertexArrayHandle
+{
+  return vertex_format_detail::GLVertexArray_to_ptr(createVertexArray());
+}
+
 auto GLVertexFormat::currentAttrSlot() -> GLVertexFormatAttr&
 {
   return attributes_.at(current_attrib_index_);
@@ -348,15 +356,16 @@ auto createVertexArrayGeneric_impl(
     const std::array<GLVertexFormatAttr, GLVertexFormat::MaxVertexAttribs>& attribs
   ) -> GLObject
 {
-  const auto direct_state_access = ARB::direct_state_access() || EXT::direct_state_access();
+  using namespace vertex_format_detail;
+
+  const auto direct_state_access = ARB::direct_state_access || EXT::direct_state_access;
 
   // The direct state access path can ONLY be used if one of the <ARB,EXT>_direct_state_access
   //   extensions is available AND we're using the Path_vertex_attrib_binding execution path,
   //   as the Path_vertex_array_object path requires calling functions which have no DSA
   //   version and so - the vertex array would have to get bound anyways then, which would
   //   dwarf all the performance advantage of DSA
-  const auto dsa_path /* direct state access path */ =
-    direct_state_access && CreatePath == vertex_format_detail::Path_vertex_attrib_binding;
+  const auto dsa_path = direct_state_access && (CreatePath == Path_vertex_attrib_binding);
 
   // The format_vertex_attrib_binding, format_vertex_array_object
   //   lambdas exist to make the attribute iteration loop tidier
@@ -475,9 +484,9 @@ auto createVertexArrayGeneric_impl(
     //     improve performance, whereas all other methods would sacrifice one or the
     //     other. Thanks C++17 :)
     //  -> The format_vertex_* functions are lambdas defined above the loop
-    if constexpr(CreatePath == vertex_format_detail::Path_vertex_attrib_binding) {
+    if constexpr(CreatePath == Path_vertex_attrib_binding) {
       format_vertex_attrib_binding(vertex_array, attr_idx, attr, vertex_buffer);
-    } else if(CreatePath == vertex_format_detail::Path_vertex_array_object) {
+    } else if(CreatePath == Path_vertex_array_object) {
       format_vertex_array_object(vertex_array, attr_idx, attr, vertex_buffer);
     }
 
@@ -559,49 +568,20 @@ GLVertexArray::~GLVertexArray()
   glDeleteVertexArrays(1, &id_);
 }
 
+auto GLVertexArray::operator=(GLVertexArray&& other) -> GLVertexArray&
+{
+  this->~GLVertexArray();
+  id_ = GLNullObject;
+
+  std::swap(id_, other.id_);
+
+  return *this;
+}
+
 auto GLVertexArray::id() const -> GLObject
 {
   return id_;
 }
-
-#if 0
-auto GLVertexArray::bindVertexBuffer(
-    unsigned index, const GLVertexBuffer& vertex_buffer,
-    GLSize stride, GLSize offset
-  ) -> GLVertexArray&
-{
-  assert(vertex_buffer.id() != GLNullObject &&
-      "attempted to bind a null buffer to a vertex array!");
-  assert(index < GLVertexFormat::MaxVertexBufferBindings &&
-      "the index exceedes the maximum alowed number of vertex buffer bindings!");
-
-  // GLSize is a signed type - so ensure the offset and size aren't negative
-  assert(offset >= 0 && stride >= 0);
-
-  // See note above method's declaration
-  if(!ARB::vertex_attrib_binding()) throw VertexAttribBindingUnsupportedError();
-
-  if(stride > GLVertexFormat::MaxVertexAttribStride) throw StrideExceedesMaxAllowedError();
-
-  // Bind the buffer to the vertex array - utilizing
-  //   DSA (direct state access) if available
-  GLObject bufferid = vertex_buffer.id();
-  if(ARB::direct_state_access() || EXT::direct_state_access()) {
-    glVertexArrayVertexBuffer(id_, index, bufferid, offset, stride);
-  } else {
-    glBindVertexArray(id_);
-
-    glBindVertexBuffer(index, bufferid, offset, stride);
-
-    // Unbind the VAO for it's safety (since it saves global state
-    //   at certain moments leaving it bound could cuase it's state
-    //   to change unexpectedly)
-    glBindVertexArray(0);
-  }
-
-  return *this;
-}
-#endif
 
 auto GLVertexArray::bind() -> GLVertexArray&
 {

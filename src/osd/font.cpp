@@ -51,4 +51,25 @@ auto OSDBitmapFont::pixelDataSize() const -> size_t
   return loaded_ ? font_pixels_.size() : std::numeric_limits<size_t>::max();
 }
 
+/*
+ * TODO: GET RID of all these hard-coded values :)
+ */
+auto OSDBitmapFont::numGlyphs() const -> size_t
+{
+  return 256;
+}
+
+auto OSDBitmapFont::glyphDimensions() const -> ivec2
+{
+  return { 8, 16 };
+}
+
+auto OSDBitmapFont::glyphGridLayoutDimensions() const -> ivec2
+{
+  return { 1, 256 };
+}
+/*
+ *
+ */
+
 }

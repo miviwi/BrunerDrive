@@ -3,6 +3,7 @@ set (SrcDir ${PROJECT_SOURCE_DIR}/src)
 target_sources (BrunerDrive PRIVATE
   ${SrcDir}/brdrive.cpp
 
+  # Window specific sources
   ${SrcDir}/window/window.cpp
   ${SrcDir}/window/event.cpp
 
@@ -16,6 +17,7 @@ target_sources (BrunerDrive PRIVATE
   ${SrcDir}/gx/texture.cpp
   ${SrcDir}/gx/program.cpp
   ${SrcDir}/gx/fence.cpp
+  ${SrcDir}/gx/handle.cpp
 
   # X11 specific sources
   ${SrcDir}/x11/x11.cpp
