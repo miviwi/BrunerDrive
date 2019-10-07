@@ -127,8 +127,9 @@ auto GLVertexFormatAttr::normalized() const -> bool
 GLVertexFormat::GLVertexFormat() :
   current_attrib_index_(0),
   vertex_buffer_bitfield_(0),
+  instance_buffer_bitfield_(0),
   padding_bytes_(0),
-  cached_vertex_size_(std::nullopt)
+  cached_sizes_(std::nullopt)
 {
 }
 
@@ -145,12 +146,12 @@ auto GLVertexFormat::attr(
 }
 
 auto GLVertexFormat::iattr(
-    unsigned buffer_index, int num_components, GLType type, GLSize offset_
+    unsigned buffer_index, int num_components, GLType type, AttrType attr_type, GLSize offset_
   ) -> GLVertexFormat&
 {
   GLSize offset = offset_ < 0 ? vertexByteSize() : offset_;
 
-   return appendAttr(buffer_index, num_components, type, offset, AttrType::Integer);
+   return appendAttr(buffer_index, num_components, type, offset, attr_type|AttrType::Integer);
 }
 
 auto GLVertexFormat::padding(GLSize padding_bytes) -> GLVertexFormat&
@@ -162,7 +163,7 @@ auto GLVertexFormat::padding(GLSize padding_bytes) -> GLVertexFormat&
   padding_bytes_ = padding_bytes;
 
   // Make sure the vertexByteSize() gets recalculated upon next query
-  invalidateCachedVertexSize(); 
+  invalidateCachedSizes();
 
   return *this;
 }
@@ -170,8 +171,43 @@ auto GLVertexFormat::padding(GLSize padding_bytes) -> GLVertexFormat&
 auto GLVertexFormat::vertexByteSize() const -> GLSize
 {
   // First, check if there is a cached value available...
-  if(cached_vertex_size_) return cached_vertex_size_.value();    // There is!
+  if(!cached_sizes_) recalculateSizes();
 
+  return cached_sizes_->vertex;
+}
+
+auto GLVertexFormat::instanceByteSize() const -> GLSize
+{
+  // First, check if there is a cached value available...
+  if(!cached_sizes_) recalculateSizes();
+
+  return cached_sizes_->instance;
+}
+
+void GLVertexFormat::recalculateSizes() const
+{
+  // First calculate the per-vertex data size...
+  auto per_vertex = doRecalculateSize(
+      [](const GLVertexFormatAttr& a) -> bool { return !(a.attr_type & AttrType::PerInstance); },
+      /* add_padding */ true
+  );
+
+  // ...and then the per-instance size
+  auto per_instance = doRecalculateSize(
+      [](const GLVertexFormatAttr& a) -> bool { return a.attr_type & AttrType::PerInstance; },
+      /* add_padding */ false
+  );
+
+  cached_sizes_ = CachedSizes {
+    .vertex = per_vertex,
+    .instance = per_instance,
+  };
+}
+
+auto GLVertexFormat::doRecalculateSize(
+    AttrSizeAttrFilterFn filter_fn, bool add_padding
+  ) const -> GLSize
+{
   // Accumulates the size of all the attributes
   GLSize accumulator = 0;
 
@@ -179,7 +215,8 @@ auto GLVertexFormat::vertexByteSize() const -> GLSize
   //   indices come later in memory, so enure this
   //   is the case
   auto sorted_attrs = AttributeArray();       // Make a deep copy of 'attributes_'
-  std::copy(attributes_.cbegin(), attributes_.cend(), sorted_attrs.begin());
+  std::copy_if(attributes_.cbegin(), attributes_.cend(), sorted_attrs.begin(),
+      filter_fn);
 
   // Sort by offset in ascending order
   std::sort(sorted_attrs.begin(), sorted_attrs.end(),
@@ -203,14 +240,12 @@ auto GLVertexFormat::vertexByteSize() const -> GLSize
     accumulator += attrib_pad /* account for the LAST attribute's padding */ + attrib_size;
   }
 
-  // Make sure to account for the padding of the last attribute
+  // Make sure to account for the padding of the last attribute,
+  //  if applicable (add_padding == true)
   //   - See comment above the declaration of padding()
-  GLSize vertex_size = accumulator + padding_bytes_;
+  GLSize size = accumulator + (add_padding ? padding_bytes_ : 0);
 
-  // Cache the result to spped up future queries
-  cached_vertex_size_ = vertex_size;
-
-  return vertex_size;
+  return size;
 }
 
 auto GLVertexFormat::bindVertexBuffer(
@@ -227,10 +262,16 @@ auto GLVertexFormat::bindVertexBuffer(
   // GLSize is a signed type - so ensure the offset isn't negative
   assert(offset >= 0);
 
+  bool buffer_instanced = (instance_buffer_bitfield_ >> index)&1;
+
   // 'stride_' is an optional parameter to reduce having to type
   //   redundant code (the assumption is - in most cases the
   //   layout of the attribute data will be interleaved)
-  GLSize stride = (stride_ < 0) ? vertexByteSize() : stride_;
+  //  - If it's not provided select it based on wheter this
+  //    attribute buffer bind point contains per-instance data
+  GLSize stride = stride_;
+  if(stride < 0) stride = !buffer_instanced ? vertexByteSize() : instanceByteSize();
+
   if(stride > GLVertexFormat::MaxVertexAttribStride) throw StrideExceedesMaxAllowedError();
 
   // Fill in internal data structures
@@ -289,7 +330,7 @@ auto GLVertexFormat::nextAttrSlotIndex() -> unsigned
 }
 
 auto GLVertexFormat::appendAttr(
-    unsigned buffer_index, int num_components, GLType type, GLSize offset, AttrType attr_type
+    unsigned buffer_index, int num_components, GLType type, GLSize offset, int attr_type
   ) -> GLVertexFormat&
 {
   // Find a free attribute slot index
@@ -310,22 +351,42 @@ auto GLVertexFormat::appendAttr(
 
   // Save the attribute's properties to an internal data structure
   attributes_.at(attr_slot_idx) = GLVertexFormatAttr {
-    attr_type,
+    (AttrType)attr_type,
 
     buffer_index,
     num_components, gl_type, offset,
   };
+
+  bool per_instance = attr_type & AttrType::PerInstance;
+
+  // Make sure the buffer at 'buffer_index' is either per-instance
+  //   or hasn't been used before if we're appending a PerInstance attribute
+  //   and the other way around - if an attribute is per VERTEX make
+  //   sure the buffer hasn't been used for per-instance attributes before
+  auto buffer_used = usesVertexBuffer(buffer_index);
+  auto buffer_per_instance = (instance_buffer_bitfield_ >> buffer_index)&1;
+  if(buffer_used) {
+    if(per_instance) {
+      if(!buffer_per_instance) throw PerVertexAttribInPerInstanceBufferError();
+    } else {
+      if(buffer_per_instance) throw PerInstanceAttribInPerVertexBufferError();
+    }
+  }
 
   // Mark the bit corresponding to 'buffer_index' in
   //   the 'vertex_buffer_bitfield_' so this index will
   //   be considered used/required by the vertex format
   vertex_buffer_bitfield_ |= 1u << buffer_index;
 
+  // And do the same for 'instance_buffer_bitfield_' if
+  //   the attribute is marked PerInstance
+  if(attr_type & AttrType::PerInstance) instance_buffer_bitfield_ |= 1u << buffer_index;
+
   // Advance the current attribute index to the next slot
   current_attrib_index_++;
 
   // Make sure the vertexByteSize() gets recalculated upon next query
-  invalidateCachedVertexSize(); 
+  invalidateCachedSizes();
 
   return *this;
 }
@@ -378,7 +439,7 @@ auto createVertexArrayGeneric_impl(
       const GLVertexFormatAttr& attr, const GLVertexFormatBuffer& buffer
   ) {
     // Setup the attribute's format
-    if(attr.attr_type == GLVertexFormatAttr::Integer) {
+    if(attr.attr_type & GLVertexFormatAttr::Integer) {
       if(dsa_path) {
         glVertexArrayAttribIFormat(
             vertex_array, attr_idx, attr.num_components, attr.type, attr.offset
@@ -410,11 +471,21 @@ auto createVertexArrayGeneric_impl(
       // Bind the backing buffer
       glVertexArrayVertexBuffer(vertex_array, attr.buffer_index,
           buffer.bufferid, buffer.offset, buffer.stride);
+
+      // Set up the divisor, if applicable
+      if(attr.attr_type & GLVertexFormatAttr::PerInstance) {
+        glVertexArrayBindingDivisor(vertex_array, attr.buffer_index, 1);
+      }
     } else {
-      glVertexAttribBinding(vertex_array, attr.buffer_index);
+      glVertexAttribBinding(attr_idx, attr.buffer_index);
 
       // Bind the backing buffer
       glBindVertexBuffer(attr.buffer_index, buffer.bufferid, buffer.offset, buffer.stride);
+
+      // And set up the divisor, if applicable
+      if(attr.attr_type & GLVertexFormatAttr::PerInstance) {
+        glVertexBindingDivisor(attr.buffer_index, 1);
+      }
     }
   };
 
@@ -432,7 +503,7 @@ auto createVertexArrayGeneric_impl(
     auto off = (const void *)(uintptr_t)(buffer.offset + attr.offset);
 
     // Setup the attribute's format
-    if(attr.attr_type == GLVertexFormatAttr::Integer) {
+    if(attr.attr_type & GLVertexFormatAttr::Integer) {
       glVertexAttribIPointer(
           attr_idx, attr.num_components, attr.type, buffer.stride, off
       );
@@ -444,6 +515,10 @@ auto createVertexArrayGeneric_impl(
       glVertexAttribPointer(
           attr_idx, attr.num_components, attr.type, normalized, buffer.stride, off
       );
+    }
+
+    if(attr.attr_type & GLVertexFormatAttr::PerInstance) {
+      glVertexAttribDivisor(attr_idx, 1);
     }
   };
 
@@ -533,9 +608,9 @@ auto GLVertexFormat::createVertexArray_vertex_array_object() const -> GLVertexAr
   return std::move(array);
 }
 
-void GLVertexFormat::invalidateCachedVertexSize()
+void GLVertexFormat::invalidateCachedSizes()
 {
-  cached_vertex_size_ = std::nullopt;
+  cached_sizes_ = std::nullopt;
 }
 
 void GLVertexFormat::dbg_ForceVertexArrayCreatePath(int path)

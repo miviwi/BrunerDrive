@@ -81,8 +81,12 @@ semi-private:
   auto submit(SubmitFriendKey, GLContext& gl_context) const -> GLFence;
 };
 
-// - The vertex format for verts_ should be blank as vertex attributes aren't used
-//   for drawing strings
+// - 'verts_' should contain an ivec4 attribute at location 0, where:
+//        attr.xy is this string's position relative to the top-left corner
+//          expressed in screen pixels
+//        attr.z is the 0-based offset at which this string's data starts
+//          in the 'strings_' texture buffer
+//        attr.w is the length of the string expressed in characters
 // - The index Buffer MUST contain 5 vertices per glyph formed in this fasion:
 //       n+0, n+1, n+2, n+3, 0xFFFF, n+4, n+5, n+6, n+7, 0xFFFF...
 // - The max_string_len_ must be the maximum length of all the strings residing
@@ -93,25 +97,18 @@ semi-private:
 //       auto string2 = "John Doe!";
 //
 //       strings_  =>  "helloJohn Doe!"
-//  - 'strings_xy_off_len_' should contain rgba16i texels, where:
-//        texel.rg is this string's position relative to the top-left corner
-//          expressed in screen pixels
-//        texel.b is the 0-based offset at which this string's data starts
-//          in the 'strings_' texture buffer
-//        texel.a is the length of the string expressed in characters
-//   * Example 'strings_xy_off_len_' buffer data which fits the above 'strings_' buffer
+//   * Example 'verts_' buffer data which fits the above 'strings_' buffer
 //       i16[] = {
-//         // string1
+//         // instance[0]  =>  string1
 //         20 /* screen_x */, 10 /* screen_y */, 0 /* offset */, sizeof(string1)-1, /* size */
 //
-//         // string2
+//         // instance[1]  =>  string2
 //         20, 100, sizeof(string1) /* comes right after string1 */, sizeof(string2)-1,
 //       };
 auto osd_drawcall_strings(
     GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr inds_offset_,
     GLSize max_string_len_, GLSize num_strings_,
-    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_,
-    GLTextureBuffer *strings_xy_off_len_
+    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_
   ) -> OSDDrawCall;
 
 // Sets up the proper state and calls glDraw<Arrays,Elements>[Instanced]()

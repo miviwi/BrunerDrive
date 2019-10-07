@@ -17,7 +17,7 @@ auto init_DrawString_program() -> GLProgram*
 
   vert
     .source(R"VERT(
-layout(location = 0) in vec3 viColor;
+layout(location = 0) in ivec4 viStringXYOffsetLength;
 
 out Vertex {
   vec3 Position;
@@ -56,10 +56,7 @@ const vec2 UVs[4] = vec2[](
   vec2(1.0f, 0.0f/256.0f)
 );
 
-uniform int uiDrawType;
-
 uniform isamplerBuffer usStrings;
-uniform isamplerBuffer usStringXYPositionsOffsetsLengths;
 
 // Gives an integer which is the index of the glyph
 //   currently being rendered
@@ -85,10 +82,9 @@ void main()
   //     characters can be found
   //   * the string's length
   //  and unpack them for convenient access
-  ivec4 string_xy_off_len = texelFetch(usStringXYPositionsOffsetsLengths, gl_InstanceID);
-  vec2 string_xy = vec2(string_xy_off_len.rg) * InvResolution;
-  int string_offset = string_xy_off_len.b;
-  int string_length = string_xy_off_len.a;
+  vec2 string_xy = vec2(viStringXYOffsetLength.xy) * InvResolution;
+  int string_offset = viStringXYOffsetLength.z;
+  int string_length = viStringXYOffsetLength.w;
 
   int string_character_num = OffsetInString();
   int vert_id = GlyphQuad_VertexID();
@@ -119,7 +115,7 @@ void main()
   // ...and assign it
   vo.Position = projected_pos;
   vo.ScreenPosition = screen_pos.xyz;
-  vo.Color = viColor;
+//  vo.Color = viColor;
   vo.UV = uv;
   vo.Character = character;
 

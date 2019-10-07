@@ -21,7 +21,7 @@ OSDSurface::OSDSurface() :
   dimensions_(ivec2::zero()), font_(nullptr), bg_(Color::transparent()),
   created_(false),
   surface_object_inds_(nullptr), font_tex_(nullptr), font_sampler_(nullptr),
-  strings_(nullptr), strings_xy_off_len_(nullptr)
+  strings_buf_(nullptr), strings_tex_(nullptr)
 {
 }
 
@@ -94,14 +94,13 @@ void OSDSurface::initGLObjects()
   surface_object_inds_ = new GLIndexBuffer();
 
   initFontGLObjects();
-
-  strings_ = new GLTextureBuffer(); strings_xy_off_len_ = new GLTextureBuffer();
 }
 
 void OSDSurface::initFontGLObjects()
 {
   assert(font_);
   font_tex_ = new GLTexture2D(); font_sampler_ = new GLSampler();
+  strings_buf_ = new GLBufferTexture(); strings_tex_ = new GLTextureBuffer();
 
   auto& font_tex = *font_tex_;
   auto& font_sampler = *font_sampler_;

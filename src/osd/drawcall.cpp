@@ -32,8 +32,7 @@ OSDDrawCall::OSDDrawCall() :
 auto osd_drawcall_strings(
     GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr inds_offset_,
     GLSize max_string_len_, GLSize num_strings_,
-    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_,
-    GLTextureBuffer *strings_xy_off_len_
+    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_
   ) -> OSDDrawCall
 {
   auto tex_and_sampler = [](
@@ -62,10 +61,9 @@ auto osd_drawcall_strings(
   drawcall.textures = OSDDrawCall::TextureBindings {
       tex_and_sampler(font_tex_, font_sampler_),
       tex_and_sampler(strings_, nullptr),
-      tex_and_sampler(strings_xy_off_len_, nullptr),
     },
 
-  drawcall.textures_end = 3; // 3 Textures sequentially - thus index 3 is one past the last one
+  drawcall.textures_end = 2; // 2 Textures sequentially - thus index '2' is one past the last one
 
   return drawcall;
 }
@@ -83,7 +81,7 @@ static const char *s_uniform_names[OSDDrawCall::NumDrawTypes][16 /* aribitrary *
   { nullptr },
 
   // OSDSurface::DrawString
-  { "usFont", "usStrings", "usStringXYPositionsOffsetsLengths", nullptr },
+  { "usFont", "usStrings", nullptr },
 
   // OSDSurface::DrawRectangle (TODO!)
   { nullptr },
@@ -111,8 +109,8 @@ auto OSDDrawCall::submit(SubmitFriendKey, GLContext& gl_context) const -> GLFenc
   assert((command != DrawInvalid && type != DrawTypeInvalid) &&
       "attempted to submit an invalid OSDDrawCall!");
 
-  // Bind all the required textures and upload the DrawType
-  //   and TexImageUnit uniforms to the OSDSurface::renderProgram()...
+  // Bind all the required textures and upload the TexImageUnit
+  //   uniforms to the OSDSurface::renderProgram(type)...
   auto& program = OSDSurface::renderProgram(type);
   program
     .use();
@@ -133,7 +131,7 @@ auto OSDDrawCall::submit(SubmitFriendKey, GLContext& gl_context) const -> GLFenc
     auto uniform_name = tex_uniform_names[i];
     assert(uniform_name);
 
-    // ...and set it (the sampler/tex image unit)
+    // ...and set it (i.e. the sampler/tex image unit)
     program
       .uniform(uniform_name, tex_image_unit);
   }

@@ -67,8 +67,10 @@ int main(int argc, char *argv[])
   X11Window window;
   X11EventLoop event_loop;
 
+  Geometry window_geometry = { 0, 0, 960, 960 };
+
   window
-    .geometry({ 0, 0, 960, 960 })
+    .geometry(window_geometry)
     .background(Color(1.0f, 0.0f, 1.0f, 0.0f))
     .create()
     .show();
@@ -192,28 +194,9 @@ void main()
     memcpy(string_buf_tex_mapping.get(), topaz_test_string, sizeof(topaz_test_string));
   }
 
-  constexpr size_t num_strings = 2;
-  GLBufferTexture string_xy_off_len_buf_tex;
-  string_xy_off_len_buf_tex
-    .alloc(
-        sizeof(u16)*4*num_strings, GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
-    );
-  {
-    auto string_xy_off_len_buf_tex_mapping = string_xy_off_len_buf_tex.map(
-        GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
-    );
-
-    const u16 xy_offsets_lengths[] = { 10, 10, 0, 13, 256, 50, 13, 14 };
-    memcpy(string_xy_off_len_buf_tex_mapping.get(), xy_offsets_lengths, sizeof(xy_offsets_lengths));
-  }
-
   GLTextureBuffer string_tex_buf;
   string_tex_buf
     .buffer(r8i, string_buf_tex);
-
-  GLTextureBuffer string_xy_off_len_tex_buf;
-  string_xy_off_len_tex_buf
-    .buffer(rgba16i, string_xy_off_len_buf_tex);
 
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
@@ -268,41 +251,38 @@ void main()
   glEnable(GL_PRIMITIVE_RESTART);
   glPrimitiveRestartIndex(0xFFFF);
 
-  GLVertexFormat color_vertex_format;
+  GLVertexFormat string_vertex_format;
 
-  constexpr GLSize ColorsDataSize = 4*(3+1) /* size of the array */ * sizeof(uint8_t);
-  const uint8_t ColorsData[
-      4 /* num vertices */ * (3 /* num components (R,G,B) per vertex */ + 1 /* padding */)
-  ] = {
-      0xFF, 0x00, 0x00, /* padding byte */ 0x00,
-      0xFF, 0xFF, 0x00, /* padding byte */ 0x00,
-      0x00, 0x80, 0xFF, /* padding byte */ 0x00,
-      0x80, 0x00, 0xCC, /* padding byte */ 0x00,
+  const i16 StringXYOffsetsLengths[2 /* num strings */ * 4 /* num componnets R,G,B,A */] = {
+      10, 10, 0, 13,
+      256, 50, 13, 14,
   };
 
-  GLVertexBuffer color_data_buf;
-  color_data_buf
-    .alloc(ColorsDataSize, GLBuffer::DynamicDraw, GLBuffer::MapWrite);
+  GLVertexBuffer string_per_instance_data_buf;
+  string_per_instance_data_buf
+    .alloc(sizeof(StringXYOffsetsLengths), GLBuffer::DynamicDraw, GLBuffer::MapWrite);
 
-  if(auto color_data_mapping = color_data_buf.map(GLBuffer::MapWrite)) {
-    memcpy(color_data_mapping.get(), ColorsData, ColorsDataSize);
+  if(auto string_data_buf_mapping = string_per_instance_data_buf.map(GLBuffer::MapWrite)) {
+    memcpy(string_data_buf_mapping.get(), StringXYOffsetsLengths, sizeof(StringXYOffsetsLengths));
   }
 
-  printf("(empty)color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
+  string_vertex_format
+    .iattr(0, 4, GLType::i16, GLVertexFormatAttr::PerInstance);
 
-  color_vertex_format
-    .attr(0, 3, GLType::u8, 0)
-    .padding(sizeof(uint8_t));   // Pad data for vertices on 4-byte boundaries
+  printf("string_vertex_format.vertexByteSize()=%d\n", string_vertex_format.vertexByteSize());
+  printf("string_vertex_format.instanceByteSize()=%d\n\n", string_vertex_format.instanceByteSize());
 
-  printf("color_vertex_format.vertexByteSize()=%d\n\n", color_vertex_format.vertexByteSize());
-
-  auto vertex_array = color_vertex_format
-    .bindVertexBuffer(0, color_data_buf)
+  auto vertex_array = string_vertex_format
+    .bindVertexBuffer(0, string_per_instance_data_buf)
     .createVertexArray();
 
   topaz_tex_uploaded
     .block(1);
   printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
+
+  OSDSurface some_surface;
+  some_surface
+    .create({ window_geometry.w, window_geometry.h }, &topaz);
   
   bool running = true;
   bool change = false;
@@ -376,7 +356,7 @@ void main()
         &vertex_array, GLType::u16, &text_index_buf, 0,
         14, 2,
         &topaz_tex, &topaz_tex_sampler,
-        &string_tex_buf, &string_xy_off_len_tex_buf
+        &string_tex_buf
     );
         
     osd_submit_drawcall(gl_context, drawcall);

@@ -102,8 +102,8 @@ private:
   GLTexture2D *font_tex_;
   GLSampler *font_sampler_;
 
-  GLTextureBuffer *strings_;
-  GLTextureBuffer *strings_xy_off_len_;
+  GLBufferTexture *strings_buf_;
+  GLTextureBuffer *strings_tex_;
 };
 
 }

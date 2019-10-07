@@ -16,10 +16,12 @@ class GLVertexArrayHandle;
 
 struct GLVertexFormatAttr {
   enum Type : u16 {
-    Normalized, UnNormalized,    // glVertexAttribFormat()
-    Integer,                     // glVertexAttribIFormat()
+    Normalized = 0, UnNormalized = 1,    // glVertexAttribFormat()
+    Integer = (1<<1),                    // glVertexAttribIFormat()
 
-    AttrInvalid
+    PerInstance = (1<<2),     // glVertexBindingDivisor(1)
+
+    AttrInvalid = 0xFFFF,
   };
 
   Type attr_type = AttrInvalid;
@@ -125,6 +127,20 @@ public:
     { }
   };
 
+  struct PerVertexAttribInPerInstanceBufferError : public std::runtime_error {
+    PerVertexAttribInPerInstanceBufferError() :
+      std::runtime_error("the vertex buffer at this index can ONLY contain 'PerInstance'"
+          " vertex attributes (as one such attribute has already been assigned)!")
+    { }
+  };
+
+  struct PerInstanceAttribInPerVertexBufferError : public std::runtime_error {
+    PerInstanceAttribInPerVertexBufferError() :
+      std::runtime_error("the vertex buffer at this index CANNOT contain 'PerInstance'"
+          " vertex attributes (as a per vertex attribute has already been assigned)!")
+    { }
+  };
+
   GLVertexFormat();
 //  GLVertexFormat(const GLVertexFormat&) = delete;
 //  GLVertexFormat(GLVertexFormat&& other);
@@ -149,7 +165,8 @@ public:
   //    all attributes added before this call (vertexByteSize() is
   //    used to compute it) is used
   auto iattr(
-      unsigned buffer_index, int num_components, GLType type, GLSize offset = -1
+      unsigned buffer_index, int num_components, GLType type,
+      AttrType attr_type = GLVertexFormatAttr::Integer, GLSize offset = -1
     ) -> GLVertexFormat&;
 
   // Adds 'padding_bytes' of padding to the end of the format's
@@ -159,8 +176,13 @@ public:
 
   // Returns the combined size of all of the attributes (taking
   //   into account the offsets, which could be used to pad out
-  //   attributes - increasing size)
+  //   attributes - increasing size) which DO NOT have the
+  //   'PerInstance' flag set!
   auto vertexByteSize() const -> GLSize;
+
+  // Returns the size of all the attributes which are marked as
+  //    'PerInstance'
+  auto instanceByteSize() const -> GLSize;
 
   // 'index' corresponds to GLVertexFormatAttrib::buffer_index
   auto bindVertexBuffer(
@@ -207,7 +229,7 @@ private:
 
   // Add the desired vertex attribute at the next free index
   auto appendAttr(
-      unsigned buffer_index, int num_components, GLType type, GLSize offset, AttrType attr_type
+      unsigned buffer_index, int num_components, GLType type, GLSize offset, int attr_type
     ) -> GLVertexFormat&;
 
   // Returns 'true' if any call made to [i]attr() matched
@@ -222,8 +244,13 @@ private:
   //   only support ARB_vertex_array_object
   auto createVertexArray_vertex_array_object() const -> GLVertexArray;
 
-  // cached_vertex_size_ = std::nulopt;
-  void invalidateCachedVertexSize();
+  void recalculateSizes() const;
+
+  using AttrSizeAttrFilterFn = bool (*)(const GLVertexFormatAttr&);
+  auto doRecalculateSize(AttrSizeAttrFilterFn filter_fn, bool add_padding) const -> GLSize;
+
+  // cached_sizes_ = std::nulopt;
+  void invalidateCachedSizes();
 
   unsigned current_attrib_index_;
   AttributeArray attributes_;
@@ -233,6 +260,12 @@ private:
   //  - The LSB's state represents the allocation state of
   //    'bindingindex' 0, the MSB's - of the 31st
   unsigned vertex_buffer_bitfield_;
+
+  // Has a '1' bit everywhere that
+  //   - a 'AttrType::PerInstance' attribute has been bound
+  //   - the corresponding bit in 'vertex_buffer_bitfield_'
+  //     is also '1'
+  unsigned instance_buffer_bitfield_;
 
   // A bitfield which stores the indices of bind points
   //   at which a vertex buffer is bound
@@ -259,11 +292,15 @@ private:
   // See comment above the padding() setter method
   GLSize padding_bytes_;
 
-  // Computing the vertex size is very expensive,
+  // Computing the vertex/instance size is very expensive,
   //   so try to reduce the cost by caching it
   //  - Made 'mutable' so vertexByteSize() can
   //    fill it with the computed value
-  mutable std::optional<GLSize> cached_vertex_size_;
+  struct CachedSizes {
+    GLSize vertex;
+    GLSize instance;
+  };
+  mutable std::optional<CachedSizes> cached_sizes_;
 
   int dbg_forced_va_create_path_;
 };
