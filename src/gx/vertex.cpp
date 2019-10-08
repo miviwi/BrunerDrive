@@ -126,10 +126,11 @@ auto GLVertexFormatAttr::normalized() const -> bool
 
 GLVertexFormat::GLVertexFormat() :
   current_attrib_index_(0),
-  vertex_buffer_bitfield_(0),
-  instance_buffer_bitfield_(0),
+  vertex_buffer_bitfield_(0), instance_buffer_bitfield_(0),
+  bound_vertex_buffer_bitfield_(0),
   padding_bytes_(0),
-  cached_sizes_(std::nullopt)
+  cached_sizes_(std::nullopt),
+  dbg_forced_va_create_path_(0)
 {
 }
 
@@ -292,7 +293,7 @@ auto GLVertexFormat::createVertexArray() const -> GLVertexArray
   if(vertexByteSize() > MaxVertexSize) throw VertexExceedesMaxSizeError();
 
   auto bound_required_buffer_bitfield = bound_vertex_buffer_bitfield_ & vertex_buffer_bitfield_;
-  if(bound_vertex_buffer_bitfield_ != bound_required_buffer_bitfield)
+  if(bound_vertex_buffer_bitfield_ < bound_required_buffer_bitfield)
     throw AttribWithoutBoundVertexBufferError();
 
   // ...and actually create the array:
