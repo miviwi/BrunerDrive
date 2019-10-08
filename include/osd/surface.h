@@ -23,6 +23,7 @@ class GLTexture2D;
 class GLTextureBuffer;
 class GLSampler;
 class GLBuffer;
+class GLVertexBuffer;
 class GLBufferTexture;
 class GLIndexBuffer;
 class GLPixelBuffer;
@@ -50,7 +51,7 @@ public:
   auto create(
       ivec2 width_height, const OSDBitmapFont *font = nullptr,
       const Color& bg = Color::transparent()
-  ) -> OSDSurface&;
+    ) -> OSDSurface&;
 
   auto writeString(ivec2 pos, const char *string, const Color& color) -> OSDSurface&;
 
@@ -64,7 +65,14 @@ private:
   friend void osd_finalize();
 
   enum {
-    DrawcallInitialReserve = 256,
+    SurfaceVertexBufSize = 4 * 1024,
+    SurfaceIndexBufSize  = 4 * 1024,
+
+    StringVertsGPUBufSize = 4 * 1024,
+    StringIndsGPUBufSize = 4 * 1024,
+    StringsGPUBufSize = 256 * 1024, // 256KiB
+
+    NumStringInds = StringIndsGPUBufSize / sizeof(u16),
   };
 
   void initGLObjects();
@@ -72,7 +80,7 @@ private:
   // Call only if create() was called with a font
   void initFontGLObjects();
 
-  void appendStringDrawcalls();
+  void appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls);
 
   // Array of GLProgram *[OSDDrawCall::NumDrawTypes]
   //   - NOTE: pointers in this array CAN be nullptr
@@ -96,11 +104,17 @@ private:
 
   // Generic gx objects (used for drawing everything)
   GLVertexArrayHandle empty_vertex_array_;
+
+  GLVertexBuffer *surface_object_verts_;
   GLIndexBuffer *surface_object_inds_;
 
   // String-related gx objects
   GLTexture2D *font_tex_;
   GLSampler *font_sampler_;
+
+  GLVertexArrayHandle string_array_;
+  GLVertexBuffer *string_verts_;
+  GLIndexBuffer *string_inds_;
 
   GLBufferTexture *strings_buf_;
   GLTextureBuffer *strings_tex_;

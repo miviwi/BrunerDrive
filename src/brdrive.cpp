@@ -282,7 +282,9 @@ void main()
 
   OSDSurface some_surface;
   some_surface
-    .create({ window_geometry.w, window_geometry.h }, &topaz);
+    .create({ window_geometry.w, window_geometry.h }, &topaz)
+    .writeString({ 10, 10 }, "hello, world!", Color::red())
+    .writeString({ 256, 50 }, "ASDF1234567890", Color::red());
   
   bool running = true;
   bool change = false;
@@ -352,6 +354,7 @@ void main()
 
     glClear(GL_COLOR_BUFFER_BIT);
 
+    /*
     auto drawcall = osd_drawcall_strings(
         &vertex_array, GLType::u16, &text_index_buf, 0,
         14, 2,
@@ -360,7 +363,12 @@ void main()
     );
         
     osd_submit_drawcall(gl_context, drawcall);
+    */
 
+    auto surface_drawcalls = some_surface.draw();
+    for(auto& drawcall : surface_drawcalls) {
+      osd_submit_drawcall(gl_context, drawcall);
+    }
 
     std::chrono::high_resolution_clock clock;
     auto start = clock.now();
