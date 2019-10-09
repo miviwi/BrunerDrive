@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
   X11Window window;
   X11EventLoop event_loop;
 
-  Geometry window_geometry = { 0, 0, 960, 960 };
+  Geometry window_geometry = { 0, 0, 256, 256 };
 
   window
     .geometry(window_geometry)
@@ -283,8 +283,12 @@ void main()
   OSDSurface some_surface;
   some_surface
     .create({ window_geometry.w, window_geometry.h }, &topaz)
-    .writeString({ 10, 10 }, "hello, world!", Color::red())
-    .writeString({ 256, 50 }, "ASDF1234567890", Color::red());
+    .writeString({ 0, 30 }, "hello, world!", Color::red())
+    .writeString({ 0, 0 }, "ASDF1234567890", Color::red())
+    .writeString({ 128, 100 }, "xyz", Color::blue())
+    .writeString({ 128, 200 }, "!#@$", Color::green());
+
+  glViewport(0, 0, window_geometry.w, window_geometry.h);
   
   bool running = true;
   bool change = false;

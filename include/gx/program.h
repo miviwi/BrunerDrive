@@ -213,6 +213,7 @@ public:
   auto uniform(const char *name, float f) -> GLProgram&;
   auto uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLProgram&;
 
+  auto uniformVec(const char *name, float x, float y) -> GLProgram&;
   auto uniformVec(const char *name, float x, float y, float z) -> GLProgram&;
 
 private:

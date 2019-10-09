@@ -406,6 +406,20 @@ auto GLProgram::uniform(const char *name, const GLTexImageUnit& tex_unit) -> GLP
   return *this;
 }
 
+auto GLProgram::uniformVec(const char *name, float x, float y) -> GLProgram&
+{
+  auto [location, _] = uniformLocationType(name, Vec2);
+
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniform2f, glUniform2f, location, x, y
+  );
+
+  assert(glGetError() == GL_NO_ERROR);
+
+  return *this;
+}
+
 auto GLProgram::uniformVec(const char *name, float x, float y, float z) -> GLProgram&
 {
   auto [location, _] = uniformLocationType(name, Vec3);

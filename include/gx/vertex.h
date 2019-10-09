@@ -154,7 +154,7 @@ public:
   //    used to compute it) is used
   auto attr(
       unsigned buffer_index, int num_components, GLType type,
-      GLSize offset = -1, AttrType attr_type = GLVertexFormatAttr::Normalized
+      u16 attr_type = GLVertexFormatAttr::Normalized, GLSize offset = -1
     ) -> GLVertexFormat&;
 
   // Append an attribute exposed as a (32-bit) integer/vector
@@ -166,7 +166,7 @@ public:
   //    used to compute it) is used
   auto iattr(
       unsigned buffer_index, int num_components, GLType type,
-      AttrType attr_type = GLVertexFormatAttr::Integer, GLSize offset = -1
+      u16 attr_type = GLVertexFormatAttr::Integer, GLSize offset = -1
     ) -> GLVertexFormat&;
 
   // Adds 'padding_bytes' of padding to the end of the format's

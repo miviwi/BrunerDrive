@@ -135,22 +135,23 @@ GLVertexFormat::GLVertexFormat() :
 }
 
 auto GLVertexFormat::attr(
-    unsigned buffer_index, int num_components, GLType type, GLSize offset_, AttrType attr_type
+    unsigned buffer_index, int num_components, GLType type, u16 attr_type, GLSize offset_
   ) -> GLVertexFormat&
 {
-  assert((attr_type == AttrType::Normalized) || (attr_type == AttrType::UnNormalized) 
-      && "invalid AttryType (GLVertexFormatAttr::Type) passed to attr()!");
-
-  GLSize offset = offset_ < 0 ? vertexByteSize() : offset_;
+  // Set the offset to the current size of the vertex/instance attribute data
+  auto current_size = !(attr_type & AttrType::PerInstance) ? vertexByteSize() : instanceByteSize();
+  GLSize offset = offset_ < 0 ? current_size : offset_;
 
   return appendAttr(buffer_index, num_components, type, offset, attr_type);
 }
 
 auto GLVertexFormat::iattr(
-    unsigned buffer_index, int num_components, GLType type, AttrType attr_type, GLSize offset_
+    unsigned buffer_index, int num_components, GLType type, u16 attr_type, GLSize offset_
   ) -> GLVertexFormat&
 {
-  GLSize offset = offset_ < 0 ? vertexByteSize() : offset_;
+  // Set the offset to the current size of the vertex/instance attribute data
+  auto current_size = !(attr_type & AttrType::PerInstance) ? vertexByteSize() : instanceByteSize();
+  GLSize offset = offset_ < 0 ? current_size : offset_;
 
    return appendAttr(buffer_index, num_components, type, offset, attr_type|AttrType::Integer);
 }

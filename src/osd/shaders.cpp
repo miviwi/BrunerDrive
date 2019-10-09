@@ -18,6 +18,7 @@ auto init_DrawString_program() -> GLProgram*
   vert
     .source(R"VERT(
 layout(location = 0) in ivec4 viStringXYOffsetLength;
+layout(location = 1) in vec4 viStringColorRGBX;
 
 out Vertex {
   vec3 Position;
@@ -27,7 +28,7 @@ out Vertex {
   float Character;
 } vo;
 
-const float FontSize = 0.25f;
+const float FontSize = 1.0f/8.0f;
 
 // The positions of a single glyph's vertices
 //   at the screen's top-left corner
@@ -56,6 +57,9 @@ const vec2 UVs[4] = vec2[](
   vec2(1.0f, 0.0f/256.0f)
 );
 
+uniform float ufScreenAspect;
+uniform vec2 uv2InvResolution;
+
 uniform isamplerBuffer usStrings;
 
 // Gives an integer which is the index of the glyph
@@ -67,12 +71,10 @@ int OffsetInString() { return gl_VertexID >> 2; }
 //   counter-clockwise
 int GlyphQuad_VertexID() { return gl_VertexID & 3; }
 
-const float ScreenAspect = 16.0f/9.0f;
-const vec2 InvResolution = vec2(1.0f/512.0f, -1.0f/512.0f);
 
 const float TexCharHeight = 255.0f/256.0f;
 
-const vec2 ScreenCharDimensions = vec2(0.125f, 0.25f);
+const vec2 ScreenCharDimensions = vec2(FontSize * (1.0f/2.0f), FontSize);
 
 void main()
 {
@@ -82,7 +84,7 @@ void main()
   //     characters can be found
   //   * the string's length
   //  and unpack them for convenient access
-  vec2 string_xy = vec2(viStringXYOffsetLength.xy) * InvResolution;
+  vec2 string_xy = vec2(viStringXYOffsetLength.xy) * uv2InvResolution;
   int string_offset = viStringXYOffsetLength.z;
   int string_length = viStringXYOffsetLength.w;
 
@@ -104,18 +106,18 @@ void main()
   float char_t_offset = float(character) * TexCharHeight;
 
   // Compute the offset of the glyph being rendered relative to the start of the string
-  vec2 glyph_advance = vec2(ivec2(string_character_num, -gl_InstanceID)) * ScreenCharDimensions;
+  vec2 glyph_advance = vec2(ivec2(string_character_num, 0)) * ScreenCharDimensions;
 
   // Compute the needed output data...
   vec4 pos = Positions[vert_id];
   vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
-  vec3 projected_pos = vec3(pos.x * ScreenAspect, pos.yz);
+  vec3 projected_pos = vec3(pos.x * ufScreenAspect, pos.yz);
   vec4 screen_pos = ScreenPositions[vert_id];
 
   // ...and assign it
   vo.Position = projected_pos;
   vo.ScreenPosition = screen_pos.xyz;
-//  vo.Color = viColor;
+  vo.Color = viStringColorRGBX.rgb;
   vo.UV = uv;
   vo.Character = character;
 
@@ -144,7 +146,6 @@ in Vertex {
 out OUTPUT_CHANNELS foFragColor;
 
 uniform sampler2D usFont;
-const vec3 uvFontColor = vec3(1.0f, 0.6f, 0.7f);
 
 void main()
 {
@@ -163,7 +164,7 @@ void main()
   float alpha = glyph_sample;
   float alpha_mask = 1.0f-glyph_sample;
 
-  vec3 glyph_color = uvFontColor * glyph_sample;
+  vec3 glyph_color = fi.Color * glyph_sample;
 
 #if defined(NO_BLEND)
   // Do the equivalent of an old-school alpha test (NOT - blend!)

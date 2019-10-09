@@ -8,6 +8,9 @@
 #include <gx/texture.h>
 #include <gx/buffer.h>
 
+// OpenGL/gl3w
+#include <GL/gl3w.h>
+
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -137,6 +140,7 @@ void OSDSurface::initFontGLObjects()
   GLVertexFormat string_array_format;
   string_array_format
     .iattr(0, 4, GLType::u16, GLVertexFormatAttr::PerInstance)
+    .attr(0, 4, GLType::u8, GLVertexFormatAttr::PerInstance | GLVertexFormatAttr::Normalized)
     .bindVertexBuffer(0, *string_verts_);
 
   string_array_ = string_array_format.newVertexArray();
@@ -158,21 +162,43 @@ void OSDSurface::initFontGLObjects()
     .upload(0, r, GLType::u8, font_->pixelData());
 
   font_sampler
-    .iParam(GLSampler::WrapS, GLSampler::ClampEdge)
-    .iParam(GLSampler::WrapT, GLSampler::ClampEdge)
+    .iParam(GLSampler::WrapS, GLSampler::Repeat)       // GLSampler::Repeat is crucial here because
+    .iParam(GLSampler::WrapT, GLSampler::Repeat)       //   negative coordinates are used in the shader
+                                                       //   to flip the font texture
     .iParam(GLSampler::MinFilter, GLSampler::Nearset)
     .iParam(GLSampler::MagFilter, GLSampler::Nearset);
 
   strings_buf_->alloc(StringsGPUBufSize, GLBuffer::StreamRead, GLBuffer::MapWrite);
   strings_tex_->buffer(r8ui, *strings_buf_);
+
+  vec2 screen_res = { (float)dimensions_.x, (float)dimensions_.y };
+
+  float screen_aspect = screen_res.x / screen_res.y;
+  vec2 inv_screen_res = { 1.0f/screen_res.x, -1.0f/screen_res.y };
+
+  renderProgram(OSDDrawCall::DrawString)
+    .uniformVec("uv2InvResolution", inv_screen_res.x, inv_screen_res.y)
+    .uniform("ufScreenAspect", screen_aspect);
+
+  glObjectLabel(GL_TEXTURE, font_tex_->id(), -1, "OSDSurface::font_tex");
+  glObjectLabel(GL_SAMPLER, font_sampler_->id(), -1, "OSDSurface::font_sampler");
+
+  glObjectLabel(GL_VERTEX_ARRAY, string_array_->id(), -1, "OSDSurface::string_array");
+  glObjectLabel(GL_BUFFER, string_verts_->id(), -1, "OSDSurface::string_verts");
+  glObjectLabel(GL_BUFFER, string_inds_->id(), -1, "OSDSurface::string_inds");
+
+  glObjectLabel(GL_BUFFER, strings_buf_->id(), -1, "OSDSurface::strings_buf");
+  glObjectLabel(GL_TEXTURE, strings_tex_->id(), -1, "OSDSurface::strings_tex");
 }
 
 struct StringInstanceData {
   u16 x, y;
   u16 offset;
   u16 size;
+
+  u8 r, g, b, _;
 };
-static_assert(sizeof(StringInstanceData) == 4*sizeof(u16),
+static_assert(sizeof(StringInstanceData) == (4*sizeof(u16) + 4*sizeof(u8)),
     "StringInstanceData has incorrect layout!");
 
 void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
@@ -219,23 +245,37 @@ void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
 
   intptr_t strings_buf_offset = 0;
   for(size_t bucket = 0; bucket < num_buckets; bucket++) {
+    // Since the bucket size is rounded UP during calculation
+    //   the last bucket could contain less strings than the rest -
+    //   so make sure to account from that
+    size_t strs_in_bucket = (bucket+1 == num_buckets) ?
+        (string_objects_.size() - strs_per_bucket*(num_buckets-1))
+      : strs_per_bucket;
+
     auto bucket_start = string_objects_.data() + bucket*strs_per_bucket;
-    auto bucket_end   = bucket_start + strs_per_bucket-1;
+    auto bucket_end   = bucket_start + strs_in_bucket-1;
 
     const size_t bucket_str_size = bucket_end->str.size();
 
-    for(size_t bucket_idx = 0; bucket_idx < strs_per_bucket; bucket_idx++) {
+    for(size_t bucket_idx = 0; bucket_idx < strs_in_bucket; bucket_idx++) {
       const auto& bucket_str = *(bucket_start + bucket_idx);
       auto size = bucket_str.str.size();
 
       instance_data.push_back({
           (u16)bucket_str.position.x, (u16)bucket_str.position.y,
           (u16)strings_buf_offset, (u16)size,
+          bucket_str.color.r(), bucket_str.color.g(), bucket_str.color.b(),
+          0x00
       });
 
       memcpy(strings_buf_ptr + strings_buf_offset, bucket_str.str.data(), size);
       strings_buf_offset += size;
     }
+
+    drawcalls.push_back(osd_drawcall_strings(
+      string_array_.get(), GLType::u16, string_inds_, 0,
+      bucket_str_size, strs_in_bucket,
+      font_tex_, font_sampler_, strings_tex_));
   }
 
   string_verts_
@@ -246,12 +286,14 @@ void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
   for(const auto& id : instance_data) {
     printf("pos: (%hu, %hu), offset: %hu, size: %hu\n", id.x, id.y, id.offset, id.size);
   }
-#endif
 
-  drawcalls.push_back(osd_drawcall_strings(
+    drawcalls.push_back(osd_drawcall_strings(
         string_array_.get(), GLType::u16, string_inds_, 0,
         string_objects_.back().str.size(), string_objects_.size(),
         font_tex_, font_sampler_, strings_tex_));
+#endif
+
+
 
 }
 
