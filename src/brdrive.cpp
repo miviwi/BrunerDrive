@@ -174,6 +174,8 @@ void main()
     .fence()
     .block();
 
+  glDisable(GL_DEPTH_TEST);
+
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
 

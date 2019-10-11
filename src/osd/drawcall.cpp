@@ -30,9 +30,9 @@ OSDDrawCall::OSDDrawCall() :
 }
 
 auto osd_drawcall_strings(
-    GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr inds_offset_,
+    GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr base_offset,
     GLSize max_string_len_, GLSize num_strings_,
-    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_
+    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_, GLTextureBuffer *attrs_
   ) -> OSDDrawCall
 {
   auto tex_and_sampler = [](
@@ -48,22 +48,24 @@ auto osd_drawcall_strings(
   drawcall.type    = OSDDrawCall::DrawString;
 
   drawcall.verts = verts_;
-  drawcall.inds_type = inds_type_; drawcall.inds = inds_; drawcall.offset = inds_offset_;
+  drawcall.inds_type = inds_type_; drawcall.inds = inds_; drawcall.offset = 0;
 
   // Each glyph consists of a triangle fan with 4 vertices,
   //   which form a quad and a 5th vertex which is the
   //   PRIMITIVE_RESTART_INDEX
   drawcall.count = max_string_len_*5;
 
+  drawcall.base_instance = base_offset;
   drawcall.instance_count = num_strings_;
 
   // Ordered in the way expected by the DrawType::DrawString shader
   drawcall.textures = OSDDrawCall::TextureBindings {
       tex_and_sampler(font_tex_, font_sampler_),
       tex_and_sampler(strings_, nullptr),
+      tex_and_sampler(attrs_, nullptr),
     },
 
-  drawcall.textures_end = 2; // 2 Textures sequentially - thus index '2' is one past the last one
+  drawcall.textures_end = 3; // 2 Textures sequentially - thus index '2' is one past the last one
 
   return drawcall;
 }
@@ -81,7 +83,7 @@ static const char *s_uniform_names[OSDDrawCall::NumDrawTypes][16 /* aribitrary *
   { nullptr },
 
   // OSDSurface::DrawString
-  { "usFont", "usStrings", nullptr },
+  { "usFont", "usStrings", "usStringAttributes", nullptr },
 
   // OSDSurface::DrawRectangle (TODO!)
   { nullptr },
@@ -114,6 +116,12 @@ auto OSDDrawCall::submit(SubmitFriendKey, GLContext& gl_context) const -> GLFenc
   auto& program = OSDSurface::renderProgram(type);
   program
     .use();
+
+  switch(type) {
+  case OSDDrawCall::DrawString:
+    program.uniform("uiStringAttributesBaseOffset", (int)base_instance);
+    break;
+  }
 
   auto tex_uniform_names = s_uniform_names[type];
   for(unsigned i = 0; i < textures_end; i++) {

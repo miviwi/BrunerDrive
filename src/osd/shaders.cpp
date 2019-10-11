@@ -17,8 +17,10 @@ auto init_DrawString_program() -> GLProgram*
 
   vert
     .source(R"VERT(
+#if defined(USE_INSTANCE_ATTRIBUTES)
 layout(location = 0) in ivec4 viStringXYOffsetLength;
 layout(location = 1) in vec4 viStringColorRGBX;
+#endif
 
 out Vertex {
   vec3 Position;
@@ -28,16 +30,24 @@ out Vertex {
   float Character;
 } vo;
 
-const float FontSize = 1.0f/8.0f;
+//const float FontSize = 1.0f/8.0f;
 
 // The positions of a single glyph's vertices
 //   at the screen's top-left corner
+#if 0
 const vec4 PositionsOffsetVector = vec4(vec2(0.5f*FontSize, 1.0f-FontSize), 0.0f, 0.0f);
 const vec4 Positions[4] = vec4[](
   vec4(-1.0f, 1.0f, 0.0f, 1.0f),
   vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.wyww,
   vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.xyww,
   vec4(-1.0f, 1.0f, 0.0f, 1.0f) + PositionsOffsetVector.xwww
+);
+#endif
+const vec4 Positions[4] = vec4[](
+  vec4(0.0f,  0.0f, 0.1f, 1.0f),
+  vec4(0.0f, 256.0f, 0.1f, 1.0f),
+  vec4(128.0f, 256.0f, 0.1f, 1.0f),
+  vec4(128.0f,  0.0f, 0.1f, 1.0f)
 );
 
 // Positions of a full-screen quad's vertices
@@ -57,73 +67,115 @@ const vec2 UVs[4] = vec2[](
   vec2(1.0f, 0.0f/256.0f)
 );
 
-uniform float ufScreenAspect;
-uniform vec2 uv2InvResolution;
+uniform mat4 um4Projection;
 
 uniform isamplerBuffer usStrings;
+
+struct StringAttributes {
+  vec2 position;
+  int offset, length;
+
+  vec3 color;
+};
+
+#if defined(USE_INSTANCE_ATTRIBUTES)
+StringAttributes FetchStringAttributes(int string_offset)
+{
+  StringAttributes attrs;
+
+  attrs.position = vec2(viStringXYOffsetLength.xy);
+  attrs.offset = viStringXYOffsetLength.z;
+  attrs.length = viStringXYOffsetLength.w;
+
+  attrs.color = viStringColorRGBX.rgb;
+
+  return attrs;
+}
+#else
+uniform isamplerBuffer usStringAttributes;
+uniform int uiStringAttributesBaseOffset;
+
+// Fetch the string's properties from a texture, that is:
+//   * position (expressed in pixels with 0,0 at the top left corner)
+//   * the offset in the usStrings texture at which the sitring's
+//     characters can be found
+//   * the string's length
+//   * the string's color (which could be packed better, but for now
+//     24-bits per string are wasted)
+//   * 16-bits of padding
+//  and unpack them for convenient access
+StringAttributes FetchStringAttributes(int string_offset)
+{
+  StringAttributes attrs;
+
+  int texel_off = uiStringAttributesBaseOffset + string_offset*2;
+
+  ivec4 packed0 = texelFetch(usStringAttributes, texel_off+0);
+  ivec4 packed1 = texelFetch(usStringAttributes, texel_off+1);
+
+  attrs.position = vec2(packed0.xy);
+  attrs.offset = packed0.z;
+  attrs.length = packed0.w;
+
+  attrs.color = vec3(packed1.rgb) * (1.0f/255.0f);    // Normalize
+
+  return attrs;
+}
+#endif
 
 // Gives an integer which is the index of the glyph
 //   currently being rendered
 int OffsetInString() { return gl_VertexID >> 2; }
+
 // Gives an integer in the range [0;3] which is an
 //   index of the current glyph's quad vertex
 //   starting from the top-left and advancing
 //   counter-clockwise
 int GlyphQuad_VertexID() { return gl_VertexID & 3; }
 
-
 const float TexCharHeight = 255.0f/256.0f;
-
-const vec2 ScreenCharDimensions = vec2(FontSize * (1.0f/2.0f), FontSize);
 
 void main()
 {
-  // Fetch the string's properties from a texture, that is:
-  //   * position (expressed in pixels with 0,0 at the top left corner)
-  //   * the offset in the usStrings texture at which the sitring's
-  //     characters can be found
-  //   * the string's length
-  //  and unpack them for convenient access
-  vec2 string_xy = vec2(viStringXYOffsetLength.xy) * uv2InvResolution;
-  int string_offset = viStringXYOffsetLength.z;
-  int string_length = viStringXYOffsetLength.w;
-
   int string_character_num = OffsetInString();
   int vert_id = GlyphQuad_VertexID();
+
+  StringAttributes attrs = FetchStringAttributes(gl_InstanceID);
 
   // Because of instancing, more characters can be rendered
   //   than there are in a given string, in the above case
   //   cull the additional glyphs
-  if(string_character_num >= string_length) {
+  if(string_character_num >= attrs.length) {
     gl_Position = vec4(0.0f, 0.0f, 0.0f, -1.0f);
     return;
   }
 
   // The index of the string's character being rendered
-  int character_num = string_offset + string_character_num;
+  int character_num = attrs.offset + string_character_num;
 
   int character = texelFetch(usStrings, character_num).r;
   float char_t_offset = float(character) * TexCharHeight;
 
   // Compute the offset of the glyph being rendered relative to the start of the string
-  vec2 glyph_advance = vec2(ivec2(string_character_num, 0)) * ScreenCharDimensions;
+  vec2 glyph_advance = vec2(float(string_character_num) * 8.0f, 0.0f);
 
   // Compute the needed output data...
   vec4 pos = Positions[vert_id];
   vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
-  vec3 projected_pos = vec3(pos.x * ufScreenAspect, pos.yz);
+//  vec4 projected_pos = um4Projection * (pos + vec4(attrs.position + glyph_advance, 0.0f, 0.0f));
+  vec4 projected_pos = um4Projection * pos;
   vec4 screen_pos = ScreenPositions[vert_id];
 
   // ...and assign it
-  vo.Position = projected_pos;
+  vo.Position = projected_pos.xyz;
   vo.ScreenPosition = screen_pos.xyz;
-  vo.Color = viStringColorRGBX.rgb;
+  vo.Color = attrs.color;
   vo.UV = uv;
   vo.Character = character;
 
   // Position the vertex according to the given offset
   //   and posiiton in the string being rendered
-  gl_Position = pos + vec4(string_xy + glyph_advance, 0.0f, 0.0f);
+  gl_Position = projected_pos;
 }
 )VERT")
   ;
@@ -174,6 +226,7 @@ void main()
 #else
   foFragColor = vec4(glyph_color, alpha);
 #endif
+  foFragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
 }
 )FRAG");
 

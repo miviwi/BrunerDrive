@@ -118,6 +118,9 @@ private:
 
   GLBufferTexture *strings_buf_;
   GLTextureBuffer *strings_tex_;
+
+  GLBufferTexture *string_attrs_buf_;
+  GLTextureBuffer *string_attrs_tex_;
 };
 
 }

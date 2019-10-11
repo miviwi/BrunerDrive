@@ -216,6 +216,8 @@ public:
   auto uniformVec(const char *name, float x, float y) -> GLProgram&;
   auto uniformVec(const char *name, float x, float y, float z) -> GLProgram&;
 
+  auto uniformMat4x4(const char *name, const float *mat) -> GLProgram&;
+
 private:
   using UniformLocationType = std::tuple<UniformLocation, UniformType>;
 

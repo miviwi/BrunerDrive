@@ -58,6 +58,7 @@ struct OSDDrawCall {
 
   GLSizePtr offset;
   GLSize count;
+  GLSize base_instance;
   GLSize instance_count;
 
   using TextureAndSampler = std::tuple<GLTexture *, GLSampler *>;
@@ -106,9 +107,9 @@ semi-private:
 //         20, 100, sizeof(string1) /* comes right after string1 */, sizeof(string2)-1,
 //       };
 auto osd_drawcall_strings(
-    GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr inds_offset_,
+    GLVertexArray *verts_, GLType inds_type_, GLIndexBuffer *inds_, GLSizePtr base_offset,
     GLSize max_string_len_, GLSize num_strings_,
-    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_
+    GLTexture2D *font_tex_, GLSampler *font_sampler_, GLTextureBuffer *strings_, GLTextureBuffer *attrs_
   ) -> OSDDrawCall;
 
 // Sets up the proper state and calls glDraw<Arrays,Elements>[Instanced]()

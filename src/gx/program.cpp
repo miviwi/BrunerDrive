@@ -434,6 +434,18 @@ auto GLProgram::uniformVec(const char *name, float x, float y, float z) -> GLPro
   return *this;
 }
 
+auto GLProgram::uniformMat4x4(const char *name, const float *mat) -> GLProgram&
+{
+  auto [location, _] = uniformLocationType(name, Mat4x4);
+
+  uploadUniform(
+      ARB::direct_state_access || EXT::direct_state_access,
+      glProgramUniformMatrix4fv, glUniformMatrix4fv, location, 1, GL_TRUE, mat
+  );
+
+  return *this;
+}
+
 auto GLProgram::uniformLocationType(const char *name, UniformType type) -> UniformLocationType
 {
   auto location_type = UniformLocationType(InvalidLocation, InvalidType);

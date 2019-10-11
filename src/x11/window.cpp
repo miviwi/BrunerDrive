@@ -143,7 +143,37 @@ auto pX11Window::createWindow(
       XCB_WINDOW_CLASS_INPUT_OUTPUT, visual ? visual : screen->root_visual, mask, args
   );
   auto err = xcb_request_check(connection, window_cookie);
-  if(!err) return true;
+  if(!err) {
+#if !defined(NO_SET_WM_WINDOW_ROLE)
+    static const char atom_wm_window_role[] = "WM_WINDOW_ROLE";
+    auto atom_cookie = xcb_intern_atom(
+        connection,
+        0 /* only_if_exists */, sizeof(atom_wm_window_role)-1, atom_wm_window_role
+    );
+
+    xcb_generic_error_t *intern_atom_err = nullptr;
+    auto atom_reply = xcb_intern_atom_reply(connection, atom_cookie, &intern_atom_err);
+    if(intern_atom_err) {
+      free(intern_atom_err);
+      return false;
+    }
+
+    // Try to set the property - disergarding whether it succeedes or fails
+    static const char role_popup[] = "pop-up";
+    xcb_change_property(
+        connection,
+        XCB_PROP_MODE_REPLACE, window, atom_reply->atom, XCB_ATOM_STRING, 8,
+        sizeof(role_popup)-1, role_popup
+    );
+
+    // Make sure the commands are sent to the X server
+    xcb_flush(connection);
+
+    free(atom_reply);
+#endif
+
+    return true;
+  }
 
   // There was an error - cleanup and signal failure
   free(err);
