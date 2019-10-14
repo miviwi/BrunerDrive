@@ -185,11 +185,11 @@ void OSDSurface::initFontGLObjects()
 
   float t = 0.0f, l = 0.0f,
         b = (float)dimensions_.y, r = (float)dimensions_.x,
-        n = 0.01f, f = 1000.0f;
+        n = 0.0f, f = 1.0f;
 
-  float p00 =  2.0f/(r-l), p30 = -((r+l)/(r-l)),
-        p11 =  2.0f/(t-b), p31 = -((t+b)/(t-b)),
-        p22 = -2.0f/(f-n), p32 = -((f+n)/(f-n));
+  float p00 =  2.0f/(r-l), p30 = -(r+l)/(r-l),
+        p11 =  2.0f/(t-b), p31 = -(t+b)/(t-b),
+        p22 = -2.0f/(f-n), p32 = -(f+n)/(f-n);
 
   const float projection[4*4] = {
      p00, 0.0f, 0.0f,  p30,

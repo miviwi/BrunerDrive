@@ -44,10 +44,10 @@ const vec4 Positions[4] = vec4[](
 );
 #endif
 const vec4 Positions[4] = vec4[](
-  vec4(0.0f,  0.0f, 0.1f, 1.0f),
-  vec4(0.0f, 256.0f, 0.1f, 1.0f),
-  vec4(128.0f, 256.0f, 0.1f, 1.0f),
-  vec4(128.0f,  0.0f, 0.1f, 1.0f)
+  vec4(0.0f,  0.0f, 0.0f, 1.0f),
+  vec4(0.0f, 16.0f, 0.0f, 1.0f),
+  vec4(8.0f, 16.0f, 0.0f, 1.0f),
+  vec4(8.0f,  0.0f, 0.0f, 1.0f)
 );
 
 // Positions of a full-screen quad's vertices
@@ -162,8 +162,7 @@ void main()
   // Compute the needed output data...
   vec4 pos = Positions[vert_id];
   vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
-//  vec4 projected_pos = um4Projection * (pos + vec4(attrs.position + glyph_advance, 0.0f, 0.0f));
-  vec4 projected_pos = um4Projection * pos;
+  vec4 projected_pos = um4Projection * (pos + vec4(attrs.position + glyph_advance, 0.0f, 0.0f));
   vec4 screen_pos = ScreenPositions[vert_id];
 
   // ...and assign it
@@ -226,7 +225,6 @@ void main()
 #else
   foFragColor = vec4(glyph_color, alpha);
 #endif
-  foFragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
 }
 )FRAG");
 
