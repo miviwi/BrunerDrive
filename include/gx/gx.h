@@ -46,6 +46,14 @@ enum class GLType : int {
   f32_u32_24_8r,
 };
 
+enum class GLPrimitive : int {
+  Invalid,
+
+  Points,
+  Lines, LineStrip, LineLoop,
+  Triangles, TriangleStrip, TriangleFan,
+};
+
  // TODO: query OpenGL for this (?)
 static constexpr unsigned GLNumTexImageUnits    = 16;
 static constexpr unsigned GLNumBufferBindPoints = 16;

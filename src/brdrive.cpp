@@ -14,6 +14,7 @@
 #include <gx/vertex.h>
 #include <gx/texture.h>
 #include <gx/program.h>
+#include <gx/pipeline.h>
 #include <gx/fence.h>
 #include <x11/x11.h>
 #include <x11/connection.h>
@@ -86,6 +87,8 @@ int main(int argc, char *argv[])
 
   gx_init();
   osd_init();
+
+  GLPipeline pipeline;
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
