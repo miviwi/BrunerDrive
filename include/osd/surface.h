@@ -1,6 +1,7 @@
 #pragma once
 
 #include <osd/osd.h>
+#include <osd/util.h>
 
 #include <window/geometry.h>
 #include <window/color.h>
@@ -48,6 +49,8 @@ public:
   OSDSurface();
   ~OSDSurface();
 
+  //  - 'font' must be valid only until the return of
+  //    this function call
   auto create(
       ivec2 width_height, const OSDBitmapFont *font = nullptr,
       const Color& bg = Color::transparent()
@@ -56,6 +59,11 @@ public:
   auto writeString(ivec2 pos, const char *string, const Color& color) -> OSDSurface&;
 
   auto draw() -> std::vector<OSDDrawCall>;
+
+  // Clears any objects written to the surface up to
+  //   this point i.e. after this call draw() is gua-
+  //   -ranteed to return an empty vector
+  auto clear() -> OSDSurface&;
 
   static auto renderProgram(int /* OSDDrawCall::DrawType */ draw_type) -> GLProgram&;
 
@@ -68,17 +76,23 @@ private:
     SurfaceVertexBufSize = 4 * 1024,
     SurfaceIndexBufSize  = 4 * 1024,
 
-    StringVertsGPUBufSize = 4 * 1024,
-    StringIndsGPUBufSize = 4 * 1024,
-    StringsGPUBufSize = 256 * 1024, // 256KiB
-
-    NumStringInds = StringIndsGPUBufSize / sizeof(u16),
+    StringsGPUBufSize     = 256 * 1024, // 256KiB
+    StringAttrsGPUBufSize = 4 * 1024,   // 4KiB
   };
 
   void initGLObjects();
 
-  // Call only if create() was called with a font
+  // Always called by initGLObjects()
+  void initCommonGLObjects();
+
+  // Called by initGLObjects()
+  //   - Only if create() was called with a font
   void initFontGLObjects();
+
+  void destroyGLObjects();
+
+  void destroyCommonGLObjects();
+  void destroyFontGLObjects();
 
   void appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls);
 
@@ -91,6 +105,7 @@ private:
   const OSDBitmapFont *font_;
   Color bg_;
 
+  // Set to 'true' after create() is called
   bool created_;
 
   // String related data structures
@@ -102,9 +117,12 @@ private:
 
   std::vector<StringObject> string_objects_;
 
+  mat4 m_projection;
+
   // Generic gx objects (used for drawing everything)
   GLVertexArrayHandle empty_vertex_array_;
 
+  //   * attached to 'empty_vertex_array_'
   GLVertexBuffer *surface_object_verts_;
   GLIndexBuffer *surface_object_inds_;
 
@@ -112,13 +130,12 @@ private:
   GLTexture2D *font_tex_;
   GLSampler *font_sampler_;
 
-  GLVertexArrayHandle string_array_;
-  GLVertexBuffer *string_verts_;
-  GLIndexBuffer *string_inds_;
-
+  //  * string data (i.e. the strings themselves)
   GLBufferTexture *strings_buf_;
   GLTextureBuffer *strings_tex_;
 
+  //  * string attributes:
+  //      position, offset in 'strings_buf_', size, color
   GLBufferTexture *string_attrs_buf_;
   GLTextureBuffer *string_attrs_tex_;
 };

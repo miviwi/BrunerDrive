@@ -34,6 +34,7 @@ OSDSurface::OSDSurface() :
 
 OSDSurface::~OSDSurface()
 {
+  destroyGLObjects();
 }
 
 auto OSDSurface::create(
@@ -80,6 +81,13 @@ auto OSDSurface::draw() -> std::vector<OSDDrawCall>
   return std::move(drawcalls);
 }
 
+auto OSDSurface::clear() -> OSDSurface&
+{
+  string_objects_.clear();
+
+  return *this;
+}
+
 auto OSDSurface::renderProgram(int draw_type) -> GLProgram&
 {
   assert(s_surface_programs &&
@@ -97,56 +105,41 @@ auto OSDSurface::renderProgram(int draw_type) -> GLProgram&
 
 void OSDSurface::initGLObjects()
 {
+  initCommonGLObjects();
+
+  // If created with a font - initialize related objects
+  if(font_) initFontGLObjects();
+}
+
+void OSDSurface::initCommonGLObjects()
+{
   GLVertexFormat empty_vertex_format;
   empty_vertex_array_ = empty_vertex_format.newVertexArray();
 
-  surface_object_verts_ = new GLVertexBuffer();
+  surface_object_verts_ = nullptr;
   surface_object_inds_ = new GLIndexBuffer();
 
-  surface_object_verts_
-    ->alloc(SurfaceVertexBufSize, GLBuffer::StreamDraw, GLBuffer::DynamicStorage);
+  // Generate the indices for drawing quads which follow the pattern:
+  //    0 1 2 3 0xFFFF 4 5 6 7 0xFFFF 8 9 10 11 0xFFFF...
+  std::vector<u16> inds(SurfaceIndexBufSize / sizeof(u16));
+  for(u16 i = 0; i < inds.size(); i++) {
+    u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
 
-  /*
+    inds[i] = idx;
+  }
+
   surface_object_inds_
-    ->alloc(SurfaceIndexBufSize, GLBuffer::StreamDraw
-    */
-  
+    ->alloc(SurfaceIndexBufSize, GLBuffer::StaticRead, inds.data());
 
-  initFontGLObjects();
+  m_projection = osd_ortho(0.0f, 0.0f, (float)dimensions_.y, (float)dimensions_.x, 0.0f, 1.0f);
 }
 
 void OSDSurface::initFontGLObjects()
 {
   assert(font_);
   font_tex_ = new GLTexture2D(); font_sampler_ = new GLSampler();
-  string_verts_ = new GLVertexBuffer(); string_inds_ = new GLIndexBuffer();
   strings_buf_ = new GLBufferTexture(); strings_tex_ = new GLTextureBuffer();
   string_attrs_buf_ = new GLBufferTexture(); string_attrs_tex_ = new GLTextureBuffer();
-
-  string_verts_->alloc(StringVertsGPUBufSize, GLBuffer::StreamDraw, GLBuffer::DynamicStorage);
-
-  // Generate the indices for drawing strings which follow the pattern:
-  //    0 1 2 3 0xFFFF 4 5 6 7 0xFFFF 8 9 10 11 0xFFFF...
-  std::vector<u16> string_inds;
-
-  string_inds.reserve(NumStringInds);
-  for(u16 i = 0; i < NumStringInds; i++) {
-    u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
-
-    string_inds.push_back(idx);
-  }
-
-  string_inds_
-    ->alloc(StringIndsGPUBufSize, GLBuffer::StaticDraw, string_inds.data());
-
-  GLVertexFormat string_array_format;
-#if defined(USE_INSTANCE_ATTRIBUTES) 
-  string_array_format
-    .iattr(0, 4, GLType::u16, GLVertexFormatAttr::PerInstance)
-    .attr(0, 4, GLType::u8, GLVertexFormatAttr::PerInstance | GLVertexFormatAttr::Normalized)
-    .bindVertexBuffer(0, *string_verts_);
-#endif
-  string_array_ = string_array_format.newVertexArray();
 
   auto& font_tex = *font_tex_;
   auto& font_sampler = *font_sampler_;
@@ -174,41 +167,15 @@ void OSDSurface::initFontGLObjects()
   strings_buf_->alloc(StringsGPUBufSize, GLBuffer::StreamRead, GLBuffer::MapWrite);
   strings_tex_->buffer(r8ui, *strings_buf_);
 
-  string_attrs_buf_->alloc(StringsGPUBufSize, GLBuffer::StreamRead, GLBuffer::MapWrite);
+  string_attrs_buf_->alloc(StringAttrsGPUBufSize, GLBuffer::StreamRead, GLBuffer::MapWrite);
   string_attrs_tex_->buffer(rgba16i, *string_attrs_buf_);
 
-  vec2 screen_res = { (float)dimensions_.x, (float)dimensions_.y };
-
-  float screen_aspect = screen_res.x / screen_res.y;
-  vec2 inv_screen_res = { 1.0f/screen_res.x, 1.0f/screen_res.y };
-
-
-  float t = 0.0f, l = 0.0f,
-        b = (float)dimensions_.y, r = (float)dimensions_.x,
-        n = 0.0f, f = 1.0f;
-
-  float p00 =  2.0f/(r-l), p30 = -(r+l)/(r-l),
-        p11 =  2.0f/(t-b), p31 = -(t+b)/(t-b),
-        p22 = -2.0f/(f-n), p32 = -(f+n)/(f-n);
-
-  const float projection[4*4] = {
-     p00, 0.0f, 0.0f,  p30,
-    0.0f,  p11, 0.0f,  p31,
-    0.0f, 0.0f,  p22,  p32,
-    0.0f, 0.0f, 0.0f, 1.0f,
-  };
-
+  // The projection matrix is constant for a given OSDSurface
   renderProgram(OSDDrawCall::DrawString)
-    .uniform("ufScreenAspect", screen_aspect)
-    .uniformVec("uv2InvResolution", inv_screen_res.x, inv_screen_res.y)
-    .uniformMat4x4("um4Projection", projection);
+    .uniformMat4x4("um4Projection", m_projection.data());
 
   glObjectLabel(GL_TEXTURE, font_tex_->id(), -1, "OSDSurface::font_tex");
   glObjectLabel(GL_SAMPLER, font_sampler_->id(), -1, "OSDSurface::font_sampler");
-
-  glObjectLabel(GL_VERTEX_ARRAY, string_array_->id(), -1, "OSDSurface::string_array");
-  glObjectLabel(GL_BUFFER, string_verts_->id(), -1, "OSDSurface::string_verts");
-  glObjectLabel(GL_BUFFER, string_inds_->id(), -1, "OSDSurface::string_inds");
 
   glObjectLabel(GL_BUFFER, strings_buf_->id(), -1, "OSDSurface::strings_buf");
   glObjectLabel(GL_TEXTURE, strings_tex_->id(), -1, "OSDSurface::strings_tex");
@@ -217,6 +184,35 @@ void OSDSurface::initFontGLObjects()
   glObjectLabel(GL_TEXTURE, string_attrs_tex_->id(), -1, "OSDSurface::string_attrs_tex");
 }
 
+void OSDSurface::destroyGLObjects()
+{
+  destroyCommonGLObjects();
+
+  if(font_) destroyFontGLObjects();
+}
+
+void OSDSurface::destroyCommonGLObjects()
+{
+  empty_vertex_array_.destroy();
+
+  delete surface_object_verts_;
+  delete surface_object_inds_;
+}
+
+void OSDSurface::destroyFontGLObjects()
+{
+  delete font_tex_;
+  delete font_sampler_;
+
+  delete strings_tex_;
+  delete strings_buf_;
+
+  delete string_attrs_tex_;
+  delete string_attrs_buf_;
+}
+
+// Struct intended for direct memcpy() into an
+//   OpenGL buffer which stores string attributes
 struct StringInstanceTexBufferData {
   u16 x, y;
   u16 offset;
@@ -235,45 +231,33 @@ void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
   std::sort(string_objects_.begin(), string_objects_.end(),
       [](const auto& strobj1, const auto& strobj2) { return strobj1.str.size() < strobj2.str.size(); });
 
-#if 0
-  puts("Sorted StringObjects:");
-  for(const auto& strobj : string_objects_) {
-    printf("    (%d, %d) \"%s\"\n", strobj.position.x, strobj.position.y, strobj.str.data());
-  }
-  puts("");
-#endif
-
   // After sorting:
-  //   back().str  -> will always have the largest length
-  //   front().str -> will always be the shortest
+  //   back().str  -> will always be the LONGEST
+  //   front().str -> will always be the SHORTEST
   const size_t size_amplitude = string_objects_.back().str.size() - string_objects_.front().str.size();
-//  printf("size_amplitude: %zu\n", size_amplitude);
 
+  // Number of draw calls the string drawing will be split into
   size_t num_buckets = 0;
+
+  // Take the log base 2 of the size_amplitude as
+  //   the number of buckets
   if(size_amplitude <= 1) {
     num_buckets = 1;
   } else {
-    // Take the log base 2 of the size_amplitude as
-    //   the number of buckets
     size_t tmp = size_amplitude;
     while(tmp >>= 1) num_buckets++;
   }
-//  printf("num_buckets: %zu\n", num_buckets);
 
   const size_t strs_per_bucket = ceilf((float)string_objects_.size() / (float)num_buckets);
-//  printf("strs_per_bucket: %zu\n", strs_per_bucket);
-
-// std::vector<StringInstanceData> instance_data;
-//  instance_data.reserve(num_buckets * strs_per_bucket);
 
   auto strings_buf_mapping = strings_buf_->map(GLBuffer::MapWrite);
   auto strings_buf_ptr = strings_buf_mapping.get<u8>();
+  intptr_t strings_buf_offset  = 0;
 
   auto string_attrs_mapping = string_attrs_buf_->map(GLBuffer::MapWrite);
   auto string_attrs_ptr = string_attrs_mapping.get<u8>();
-
-  intptr_t strings_buf_offset  = 0;
   intptr_t string_attrs_offset = 0;
+
   for(size_t bucket = 0; bucket < num_buckets; bucket++) {
     // Since the bucket size is rounded UP during calculation
     //   the last bucket could contain less strings than the rest -
@@ -315,9 +299,15 @@ void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
       memcpy(string_attrs_ptr + string_attrs_offset, &instance_data, sizeof(instance_data));
       string_attrs_offset += sizeof(instance_data);
 
+      assert(string_attrs_offset < StringAttrsGPUBufSize &&
+          "overflowed the string attributes gpu buffer!");
+
       //  ...as well as it's contents
       memcpy(strings_buf_ptr + strings_buf_offset, bucket_str.str.data(), size);
       strings_buf_offset += size;
+
+      assert(strings_buf_offset < StringsGPUBufSize &&
+          "overflowed the gpu string data buffer!");
     }
 
     // Append a draw-call for each bucket of strings, where:
@@ -329,21 +319,11 @@ void OSDSurface::appendStringDrawcalls(std::vector<OSDDrawCall>& drawcalls)
     //      which wastes some memory, but not enough to be of immediate concern
     drawcalls.push_back(
         osd_drawcall_strings(
-          string_array_.get(), GLType::u16, string_inds_, bucket*strs_per_bucket * 2,
+          empty_vertex_array_.get(), GLType::u16, surface_object_inds_, bucket*strs_per_bucket * 2,
           bucket_str_size, strs_in_bucket,
           font_tex_, font_sampler_, strings_tex_, string_attrs_tex_)
     );
   }
-
-#if 0
-  string_verts_
-    ->upload(instance_data.data());
-
-  puts("StringObjects instance_data:");
-  for(const auto& id : instance_data) {
-    printf("pos: (%hu, %hu), offset: %hu, size: %hu\n", id.x, id.y, id.offset, id.size);
-  }
-#endif
 }
 
 }

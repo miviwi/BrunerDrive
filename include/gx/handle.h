@@ -27,6 +27,12 @@ public:
 
   auto operator->() -> GLVertexArray* { return get(); }
 
+  // Calls delete on the managed GLVertexArray
+  //   and sets the internal pointer to nullptr
+  //  - If the array is already null the call
+  //    is a no-op
+  auto destroy() -> GLVertexArrayHandle&;
+
 /*
 semi-private:
 */

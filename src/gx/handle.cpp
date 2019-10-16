@@ -21,10 +21,7 @@ GLVertexArrayHandle::GLVertexArrayHandle(GLVertexArrayHandle&& other) :
 
 GLVertexArrayHandle::~GLVertexArrayHandle()
 {
-  if(!ptr_) return;    // Make sure not to call a destructor on a null object
-
-  ptr_->~GLVertexArray();
-  free(ptr_);
+  destroy();
 }
 
 auto GLVertexArrayHandle::operator=(GLVertexArrayHandle&& other) -> GLVertexArrayHandle&
@@ -45,6 +42,17 @@ auto GLVertexArrayHandle::get() const -> const GLVertexArray*
 auto GLVertexArrayHandle::get() -> GLVertexArray*
 {
   return ptr_;
+}
+
+auto GLVertexArrayHandle::destroy() -> GLVertexArrayHandle&
+{
+  if(!ptr_) return *this;      // Make sure not to call a destructor on a null object
+
+  ptr_->~GLVertexArray();
+  free(ptr_);
+  ptr_ = nullptr;
+
+  return *this;
 }
 
 }
