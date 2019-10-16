@@ -1,6 +1,7 @@
 #pragma once
 
 #include <types.h>
+#include <os/interface.h>
 
 namespace brdrive {
 

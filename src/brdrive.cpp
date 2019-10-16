@@ -4,6 +4,9 @@
 
 #include <brdrive.h>
 #include <types.h>
+#include <os/bootstrap.h>
+#include <os/dl.h>
+#include <os/interface.h>
 #include <window/geometry.h>
 #include <window/color.h>
 #include <window/window.h>
@@ -63,6 +66,10 @@ auto load_font(const std::string& file_name) -> std::optional<std::vector<uint8_
 int main(int argc, char *argv[])
 {
   using namespace brdrive;
+
+  auto os_dl = brdrive::bootstrap_os_dl();
+
+  /*
   x11_init();
 
   X11Window window;
@@ -92,6 +99,9 @@ int main(int argc, char *argv[])
 
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glEnable(GL_PRIMITIVE_RESTART);
+  glPrimitiveRestartIndex(0xFFFF);
 
   gl_context
     .dbg_EnableMessages();
@@ -185,24 +195,6 @@ void main()
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  const char topaz_test_string[] = "hello, world!ASDF1234567890";
-  GLBufferTexture string_buf_tex;
-  string_buf_tex
-    .alloc(
-        sizeof(topaz_test_string), GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
-    );
-  {
-    auto string_buf_tex_mapping = string_buf_tex.map(
-        GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
-    );
-
-    memcpy(string_buf_tex_mapping.get(), topaz_test_string, sizeof(topaz_test_string));
-  }
-
-  GLTextureBuffer string_tex_buf;
-  string_tex_buf
-    .buffer(r8i, string_buf_tex);
-
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
     puts("couldn't load font file `Topaz.raw'!");
@@ -215,83 +207,14 @@ void main()
 
   auto c = x11().connection<xcb_connection_t>();
 
-  auto topaz_tex_pixel_buf = GLPixelBuffer(GLPixelBuffer::Upload);
-
-  topaz_tex_pixel_buf
-    .alloc(topaz.pixelDataSize(), GLBuffer::StaticRead, topaz.pixelData());
-
-  GLTexture2D topaz_tex;
-
-  topaz_tex
-    .alloc(8, 4096, 1, r8);
-
-  topaz_tex_pixel_buf
-    .uploadTexture(topaz_tex, 0, r, GLType::u8);
-
-  GLFence topaz_tex_uploaded;
-  topaz_tex_uploaded
-    .fence()
-    .sync();
-
-  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
-
-  GLSampler topaz_tex_sampler;
-  topaz_tex_sampler
-    .iParam(GLSampler::WrapS, GLSampler::Repeat)
-    .iParam(GLSampler::WrapT, GLSampler::Repeat)
-    .iParam(GLSampler::MinFilter, GLSampler::Nearset)
-    .iParam(GLSampler::MagFilter, GLSampler::Nearset);
-
-  u16 string_vert_indices[14*5];
-  for(size_t i = 0; i < sizeof(string_vert_indices)/sizeof(u16); i++) {
-    u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
-
-    string_vert_indices[i] = idx;
-  }
-
-  GLIndexBuffer text_index_buf;
-  text_index_buf
-    .alloc(sizeof(string_vert_indices), GLBuffer::DynamicDraw, string_vert_indices);
-
-  glEnable(GL_PRIMITIVE_RESTART);
-  glPrimitiveRestartIndex(0xFFFF);
-
-  GLVertexFormat string_vertex_format;
-
-  const i16 StringXYOffsetsLengths[2 /* num strings */ * 4 /* num componnets R,G,B,A */] = {
-      10, 10, 0, 13,
-      256, 50, 13, 14,
-  };
-
-  GLVertexBuffer string_per_instance_data_buf;
-  string_per_instance_data_buf
-    .alloc(sizeof(StringXYOffsetsLengths), GLBuffer::DynamicDraw, GLBuffer::MapWrite);
-
-  if(auto string_data_buf_mapping = string_per_instance_data_buf.map(GLBuffer::MapWrite)) {
-    memcpy(string_data_buf_mapping.get(), StringXYOffsetsLengths, sizeof(StringXYOffsetsLengths));
-  }
-
-  string_vertex_format
-    .iattr(0, 4, GLType::i16, GLVertexFormatAttr::PerInstance);
-
-  printf("string_vertex_format.vertexByteSize()=%d\n", string_vertex_format.vertexByteSize());
-  printf("string_vertex_format.instanceByteSize()=%d\n\n", string_vertex_format.instanceByteSize());
-
-  auto vertex_array = string_vertex_format
-    .bindVertexBuffer(0, string_per_instance_data_buf)
-    .createVertexArray();
-
-  topaz_tex_uploaded
-    .block(1);
-  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
-
   OSDSurface some_surface;
   some_surface
     .create({ window_geometry.w, window_geometry.h }, &topaz)
     .writeString({ 0, 30 }, "hello, world!", Color::red())
     .writeString({ 0, 0 }, "ASDF1234567890", Color::red())
     .writeString({ 128, 100 }, "xyz", Color::blue())
-    .writeString({ 128, 200 }, "!#@$", Color::green());
+    .writeString({ 128, 200 }, "!#@$", Color::green())
+    .writeString({ 64, 20 }, "elo melo", { 1.0f, 0.0f, 1.0f });
 
   glViewport(0, 0, window_geometry.w, window_geometry.h);
   
@@ -313,14 +236,7 @@ void main()
 
       if(sym == 'q') running = false;
 
-      if(sym == 'c' || change) {
-        const char new_text[] = "hello - again!!";
-
-        auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
-
-        memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
-        change = false;
-      }
+      if(sym == 'c') some_surface.clear();
 
       if(sym == 'f') use_fence = !use_fence;
       break;
@@ -352,27 +268,7 @@ void main()
       break;
     }
 
-    if(change) {
-      const char new_text[] = "hello - again!!";
-
-      auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
-
-      memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
-      change = false;
-    }
-
     glClear(GL_COLOR_BUFFER_BIT);
-
-    /*
-    auto drawcall = osd_drawcall_strings(
-        &vertex_array, GLType::u16, &text_index_buf, 0,
-        14, 2,
-        &topaz_tex, &topaz_tex_sampler,
-        &string_tex_buf
-    );
-        
-    osd_submit_drawcall(gl_context, drawcall);
-    */
 
     auto surface_drawcalls = some_surface.draw();
     for(auto& drawcall : surface_drawcalls) {
@@ -406,6 +302,7 @@ void main()
      .destroy();
 
   x11_finalize();
+  */
 
   return 0;
 }

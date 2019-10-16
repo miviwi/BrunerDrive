@@ -5,6 +5,8 @@ set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project (BrunerDrive)
 add_executable (BrunerDrive)
 
+add_library (BrunerDrive_sys SHARED)
+
 find_package (X11 REQUIRED)
 find_package (OpenGL REQUIRED)
 
@@ -14,6 +16,15 @@ set (CMAKE_CXX_FLAGS "-std=c++17 -g")
 target_include_directories (BrunerDrive PUBLIC ./include)
 target_include_directories (BrunerDrive PRIVATE ./extern)
 target_link_libraries (BrunerDrive PRIVATE
+  # OpenGL
+  GL
+
+  ${CMAKE_DL_LIBS}  # OpenGL/gl3w dependency
+)
+
+target_include_directories (BrunerDrive_sys PUBLIC ./include)
+target_include_directories (BrunerDrive_sys PRIVATE ./extern)
+target_link_libraries (BrunerDrive_sys PRIVATE
   # X11
   xcb X11-xcb xcb-util ${X11_LIBRARIES}
 
@@ -22,6 +33,8 @@ target_link_libraries (BrunerDrive PRIVATE
 
   ${CMAKE_DL_LIBS}  # OpenGL/gl3w dependency
 )
+
+#target_link_libraries (BrunerDrive PRIVATE BrunerDrive_sys)
 
 add_subdirectory (./src)
 add_subdirectory (./extern)

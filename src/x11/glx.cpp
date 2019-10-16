@@ -138,8 +138,10 @@ GLXContext::~GLXContext()
 
 auto GLXContext::acquire(IWindow *window_, GLContext *share) -> GLContext&
 {
-  assert(brdrive::x11_was_init() &&
+#if 0
+  assert(x11_was_init() &&
       "x11_init() MUST be called prior to creating a GLXContext!");
+#endif
 
   auto display = x11().xlibDisplay<Display>();
 
