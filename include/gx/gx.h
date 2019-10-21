@@ -8,13 +8,13 @@
 namespace brdrive {
 
 using GLEnum   = u32;
-using GLObject = unsigned;
+using GLId = unsigned;
 
 using GLSize = int;
 using GLSizePtr = intptr_t;
 
-enum : GLObject {
-  GLNullObject = 0u,
+enum : GLId {
+  GLNullId = 0u,
 };
 
 enum GLFormat : int {

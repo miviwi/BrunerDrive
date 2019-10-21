@@ -256,7 +256,7 @@ auto GLVertexFormat::bindVertexBuffer(
 {
   if(index >= MaxVertexBufferBindings) throw VertexBufferBindingIndexOutOfRangeError();
 
-  assert(vertex_buffer.id() != GLNullObject &&
+  assert(vertex_buffer.id() != GLNullId &&
       "attempted to bind a null GLVertexBuffer to a vertex array binding slot!");
   assert(index < GLVertexFormat::MaxVertexBufferBindings &&
       "the index exceedes the maximum alowed number of vertex buffer bindings!");
@@ -408,7 +408,7 @@ auto GLVertexFormat::usesVertexBuffer(unsigned buf_binding_index) -> bool
 //   to the passed description. Does NOT do error checking, as it's
 //   expected to already have been done earlier (i.e. the funct-
 //   -ion expects sane input data)
-// - Returns a GLObject holding the name of the created VertexArray
+// - Returns a GLId holding the name of the created VertexArray
 //
 // NOTE: The function also takes into account if either one of
 //       <ARB,EXT>_direct_state_access are available (runtime
@@ -417,7 +417,7 @@ template <vertex_format_detail::CreateVertexArrayPath CreatePath>
 auto createVertexArrayGeneric_impl(
     const std::array<GLVertexFormatBuffer, GLVertexFormat::MaxVertexBufferBindings>& buffers,
     const std::array<GLVertexFormatAttr, GLVertexFormat::MaxVertexAttribs>& attribs
-  ) -> GLObject
+  ) -> GLId
 {
   using namespace vertex_format_detail;
 
@@ -437,7 +437,7 @@ auto createVertexArrayGeneric_impl(
   //   - The proper (i.e. of id=='vertex_array') vertex array
   //     is bound to the context
   const auto format_vertex_attrib_binding = [=](
-      GLObject vertex_array, size_t attr_idx,
+      GLId vertex_array, size_t attr_idx,
       const GLVertexFormatAttr& attr, const GLVertexFormatBuffer& buffer
   ) {
     // Setup the attribute's format
@@ -498,7 +498,7 @@ auto createVertexArrayGeneric_impl(
   //   - The desired VBO (i.e. one with id==bufer.bufferid)
   //     is bound to the context as well
   const auto format_vertex_array_object = [=](
-      GLObject vertex_array, size_t attr_idx,
+      GLId vertex_array, size_t attr_idx,
       const GLVertexFormatAttr& attr, const GLVertexFormatBuffer& buffer
   ) {
     // Compute the proper (cummulative) offset of the attribute's data
@@ -527,7 +527,7 @@ auto createVertexArrayGeneric_impl(
   // ------------------------------------------------------------
 
   // Create the vertex array (and bind it if required)
-  GLObject vertex_array = -1;
+  GLId vertex_array = -1;
   if(dsa_path) {
     glCreateVertexArrays(1, &vertex_array);
   } else {
@@ -542,7 +542,7 @@ auto createVertexArrayGeneric_impl(
     if(attr.attr_type == GLVertexFormatAttr::AttrInvalid) continue;
 
     const auto& vertex_buffer = buffers.at(attr.buffer_index);
-    assert(vertex_buffer.bufferid != GLNullObject);
+    assert(vertex_buffer.bufferid != GLNullId);
 
     // Found an unused attribute slot!
     //   - If ARB_vertex_attrib_binding is unavailable -
@@ -628,41 +628,32 @@ void GLVertexFormat::dbg_ForceVertexArrayCreatePath(int path)
 }
 
 GLVertexArray::GLVertexArray() :
-  id_(GLNullObject)
+  GLObject(GL_VERTEX_ARRAY)
 {
 }
 
 GLVertexArray::GLVertexArray(GLVertexArray&& other) :
   GLVertexArray()
 {
-  std::swap(id_, other.id_);
+  other.swap(*this);
 }
 
 GLVertexArray::~GLVertexArray()
 {
-  if(id_ == GLNullObject) return;
-
-  glDeleteVertexArrays(1, &id_);
+  GLVertexArray::doDestroy();
 }
 
 auto GLVertexArray::operator=(GLVertexArray&& other) -> GLVertexArray&
 {
-  this->~GLVertexArray();
-  id_ = GLNullObject;
-
-  std::swap(id_, other.id_);
+  destroy();
+  other.swap(*this);
 
   return *this;
 }
 
-auto GLVertexArray::id() const -> GLObject
-{
-  return id_;
-}
-
 auto GLVertexArray::bind() -> GLVertexArray&
 {
-  assert(id_ != GLNullObject && "attempted to bind() a null GLVertexArray!");
+  assert(id_ != GLNullId && "attempted to bind() a null GLVertexArray!");
 
   glBindVertexArray(id_);
 
@@ -672,6 +663,16 @@ auto GLVertexArray::bind() -> GLVertexArray&
 auto GLVertexArray::unbind() -> GLVertexArray&
 {
   glBindVertexArray(0);
+
+  return *this;
+}
+
+auto GLVertexArray::doDestroy() -> GLObject&
+{
+  if(id_ == GLNullId) return *this;
+
+  glDeleteVertexArrays(1, &id_);
+  id_ = GLNullId;
 
   return *this;
 }

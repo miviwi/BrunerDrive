@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <stdexcept>
+#include <string>
 
 namespace brdrive {
 
@@ -46,9 +47,16 @@ public:
 
   auto signaled() -> bool;
 
+  auto label() const -> const char *;
+  auto label(const char *name) -> GLFence&;
+
 private:
   void /* GLsync */ *sync_;
   bool flushed_;
+
+#if !defined(NDEBUG)
+  std::string label_;
+#endif
 };
 
 }

@@ -21,6 +21,10 @@ GLFence::GLFence(GLFence&& other) :
 {
   std::swap(sync_, other.sync_);
   std::swap(flushed_, other.flushed_);
+
+#if !defined(NDEBUG)
+  std::swap(label_, other.label_);
+#endif
 }
 
 GLFence::~GLFence()
@@ -37,6 +41,10 @@ auto GLFence::operator=(GLFence&& other) -> GLFence&
 
   std::swap(sync_, other.sync_);
   std::swap(flushed_, other.flushed_);
+
+#if !defined(NDEBUG)
+  std::swap(label_, other.label_);
+#endif
 
   return *this;
 }
@@ -99,6 +107,27 @@ auto GLFence::signaled() -> bool
   }
 
   return false;   // Unreachable
+}
+
+auto GLFence::label() const -> const char *
+{
+#if !defined(NDEBUG)
+  return label_.data();
+#else
+  return "";
+#endif
+}
+
+auto GLFence::label(const char *name) -> GLFence&
+{
+#if !defined(NDEBUG)
+  assert(sync_);
+
+  glObjectPtrLabel(sync_, -1, name);
+  label_ = name;
+#endif
+
+  return *this;
 }
 
 }

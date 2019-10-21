@@ -28,11 +28,11 @@ public:
   };
 
   struct Program {
-    GLObject program;
+    GLId program;
   };
 
   struct VertexInput {
-    GLObject array;
+    GLId array;
     GLType indices_type;
   };
 

@@ -20,6 +20,9 @@ static void dbg_message_callback(
     GLsizei length, const GLchar* message, const void* userParam
   )
 {
+  // Discard debug group messages
+  if(source == GL_DEBUG_SOURCE_APPLICATION) return;
+
   auto prefix = type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "";
 
   fprintf(stderr,
@@ -32,7 +35,8 @@ GLContext::GLContext() :
   was_acquired_(false),
   tex_image_units_(nullptr),
   active_texture_(0),
-  buffer_bind_points_(nullptr)
+  buffer_bind_points_(nullptr),
+  dbg_group_id_(1)
 {
   // Allocate backing memory via malloc() because GLTexImageUnit's constructor requires
   //   an argument and new[] doesn't support passing per-instance args
@@ -88,6 +92,7 @@ auto GLContext::current() -> GLContext *
 
 auto GLContext::dbg_EnableMessages() -> GLContext&
 {
+#if !defined(NDEBUG)
   int context_flags = -1;
   glGetIntegerv(GL_CONTEXT_FLAGS, &context_flags);
 
@@ -98,6 +103,26 @@ auto GLContext::dbg_EnableMessages() -> GLContext&
   glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
   glDebugMessageCallback(dbg_message_callback, nullptr);
+#endif
+
+  return *this;
+}
+
+auto GLContext::dbg_PushCallGroup(const char *name) -> GLContext&
+{
+#if !defined(NDEBUG)
+  glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, dbg_group_id_, -1, name);
+  dbg_group_id_++;
+#endif
+
+  return *this;
+}
+
+auto GLContext::dbg_PopCallGroup() -> GLContext&
+{
+#if !defined(NDEBUG)
+  glPopDebugGroup();
+#endif
 
   return *this;
 }

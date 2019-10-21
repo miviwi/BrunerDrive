@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gx/gx.h>
+#include <gx/object.h>
 
 #include <exception>
 #include <stdexcept>
@@ -15,7 +16,7 @@ class GLSampler;
 class GLTexImageUnit;
 class GLBuffer;
 
-class GLTexture {
+class GLTexture : public GLObject {
 public:
   enum Dimensions {
     DimensionsInvalid,
@@ -31,12 +32,10 @@ public:
     { }
   };
 
-  GLTexture(const GLTexture&) = delete;
+  GLTexture(GLTexture&& other);
   virtual ~GLTexture();
 
-//  auto operator=(GLTexture&& other) -> GLTexture&;
-
-  auto id() const -> GLObject;
+  auto operator=(GLTexture&& other) -> GLTexture&;
 
   // Returns a value which informs which of the glTextureSubImage*
   //   functions need to be used for this texture
@@ -52,7 +51,9 @@ public:
 protected:
   GLTexture(GLEnum bind_target);
 
-  GLObject id_;
+  auto swap(GLTexture& other) -> GLTexture&;
+
+  virtual auto doDestroy() -> GLObject& final;
 
   Dimensions dimensions_;
   GLEnum bind_target_;
@@ -84,7 +85,7 @@ public:
 private:
 };
 
-class GLSampler {
+class GLSampler : public GLObject {
 public:
   enum ParamName {
     WrapS, WrapT, WrapR,
@@ -132,21 +133,19 @@ public:
   };
 
   GLSampler();
-  GLSampler(const GLSampler&) = delete;
   GLSampler(GLSampler&& other);
-  ~GLSampler();
+  virtual ~GLSampler();
 
-//  auto operator=(GLSampler&& other) -> GLSampler&;
-
-  auto id() const -> GLObject;
+  auto operator=(GLSampler&& other) -> GLSampler&;
 
   auto iParam(ParamName pname, int value) -> GLSampler&;
   auto fParam(ParamName pname, float value) -> GLSampler&;
 
+protected:
+  virtual auto doDestroy() -> GLObject& final;
+
 private:
   void initGLObject();
-
-  GLObject id_;
 };
 
 class GLTexImageUnit {
@@ -157,7 +156,7 @@ public:
 
   auto texImageUnitIndex() const -> unsigned;
 
-  auto boundTexture() const -> GLObject;
+  auto boundTexture() const -> GLId;
 
 private:
   friend GLContext;
@@ -168,8 +167,8 @@ private:
 
   unsigned slot_;
 
-  GLObject bound_texture_;
-  GLObject bound_sampler_;
+  GLId bound_texture_;
+  GLId bound_sampler_;
 };
 
 }

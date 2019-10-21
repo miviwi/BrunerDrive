@@ -3,10 +3,12 @@
 // OpenGL/gl3w
 #include <GL/gl3w.h>
 
+#include <cassert>
+
 namespace brdrive {
 
 bool g_gx_was_init = false;
-GLObject g_null_vao = GLNullObject;
+GLId g_null_vao = GLNullId;
 
 void gx_init()
 {
@@ -19,6 +21,9 @@ void gx_init()
 
   glCreateVertexArrays(1, &g_null_vao);
   glBindVertexArray(g_null_vao);
+  glObjectLabel(GL_VERTEX_ARRAY, g_null_vao, -1, "a.Global.Null");
+
+  assert(glGetError() == GL_NO_ERROR);
 
   g_gx_was_init = true;
 }

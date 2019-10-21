@@ -64,7 +64,7 @@ static constexpr auto GLBufferMapFlags_to_GLbitfield(u32 flags) -> GLbitfield
 }
 
 GLBuffer::GLBuffer(GLEnum bind_target) :
-  id_(GLNullObject),
+  GLObject(GL_BUFFER),
   bind_target_(bind_target),
   size_(~0), usage_(UsageInvalid), flags_(0),
   map_counter_(0),
@@ -72,14 +72,37 @@ GLBuffer::GLBuffer(GLEnum bind_target) :
 {
 }
 
+GLBuffer::GLBuffer(GLBuffer&& other) :
+  GLBuffer(GL_INVALID_ENUM)
+{
+  other.swap(*this);
+}
+
 GLBuffer::~GLBuffer()
 {
-  if(id_ == GLNullObject) return;
+  GLBuffer::doDestroy();
+}
 
-  // First - unmap the buffer if it's still mapped
-  if(mapping_) doUnmap(MappingFriendKey(), /* force */ true);
+auto GLBuffer::operator=(GLBuffer&& other) -> GLBuffer&
+{
+  destroy();
+  other.swap(*this);
 
-  glDeleteBuffers(1, &id_);
+  return *this;
+}
+
+auto GLBuffer::swap(GLBuffer& other) -> GLBuffer&
+{
+  other.GLObject::swap(*this);
+
+  std::swap(bind_target_, other.bind_target_);
+  std::swap(size_, other.size_);
+  std::swap(usage_, other.usage_);
+  std::swap(flags_, other.flags_);
+  std::swap(map_counter_, other.map_counter_);
+  std::swap(mapping_, other.mapping_);
+
+  return *this;
 }
 
 auto GLBuffer::alloc(GLSize size, Usage usage, u32 flags, const void *data) -> GLBuffer&
@@ -148,7 +171,7 @@ auto GLBuffer::alloc(GLSize size, Usage usage, const void *data) -> GLBuffer&
 
 auto GLBuffer::upload(const void *data) -> GLBuffer&
 {
-  assert(id_ != GLNullObject && "attempted to upload() to a null buffer!");
+  assert(id_ != GLNullId && "attempted to upload() to a null buffer!");
 
   // Make sure the buffer was created with proper usage
   if(GLBufferUsage_is_static(usage_)) throw UploadToStaticBufferError();
@@ -182,7 +205,7 @@ auto GLBuffer::unbind() -> GLBuffer&
 
 auto GLBuffer::map(u32 flags, intptr_t offset, GLSizePtr size) -> GLBufferMapping
 {
-  assert(id_ != GLNullObject && "attempted to map a null buffer!");
+  assert(id_ != GLNullId && "attempted to map a null buffer!");
 
   assert(!(offset < 0 || size < 0) && "negative offset/size passed to map()");
 
@@ -356,11 +379,6 @@ void GLBuffer::doFlushMapping(MappingFriendKey, intptr_t offset, GLSizePtr lengt
   }
 }
 
-auto GLBuffer::id() const -> GLObject
-{
-  return id_;
-}
-
 auto GLBuffer::bindTarget() const -> GLEnum
 {
   return bind_target_;
@@ -373,7 +391,7 @@ auto GLBuffer::size() const -> GLSize
 
 void GLBuffer::bindSelf()
 {
-  assert(id_ != GLNullObject && "attempted to use a null buffer!");
+  assert(id_ != GLNullId && "attempted to use a null buffer!");
 
   glBindBuffer(bind_target_, id_);
 }
@@ -381,6 +399,18 @@ void GLBuffer::bindSelf()
 void GLBuffer::unbindSelf()
 {
   glBindBuffer(bind_target_, 0);
+}
+
+auto GLBuffer::doDestroy() -> GLBuffer&
+{
+  if(id_ == GLNullId) return *this;
+
+  // First - unmap the buffer if it's still mapped
+  if(mapping_) doUnmap(MappingFriendKey(), /* force */ true);
+
+  glDeleteBuffers(1, &id_);
+
+  return *this;
 }
 
 GLBufferMapping::GLBufferMapping(
@@ -547,7 +577,7 @@ auto GLPixelBuffer::uploadTexture(
     GLTexture& tex, unsigned level, GLFormat format, GLType type, uptr offset_
   ) -> GLPixelBuffer&
 {
-  assert(id_ != GLNullObject && "attempted to uploadTexture() from a null GLPixelBuffer!");
+  assert(id_ != GLNullId && "attempted to uploadTexture() from a null GLPixelBuffer!");
   
   // Make sure this buffer is a GLPixelBuffer(Upload)
   static constexpr XferDirection direction = Upload;
@@ -615,7 +645,7 @@ auto GLPixelBuffer::downloadTexture(
     const GLTexture& tex, unsigned level, GLFormat format, GLType type, uptr offset_
   ) -> GLPixelBuffer&
 {
-  assert(id_ != GLNullObject && "attempted to downloadTexture() to a null GLPixelBuffer!");
+  assert(id_ != GLNullId && "attempted to downloadTexture() to a null GLPixelBuffer!");
 
   // Make sure this buffer is a GLPixelBuffer(Download)
   static constexpr XferDirection direction = Download;
@@ -693,7 +723,7 @@ GLBufferBindPoint::GLBufferBindPoint(
 ) :
   context_(context),
   target_(GLBufferBindPointType_to_target(type)), index_(index),
-  bound_buffer_(GLNullObject)
+  bound_buffer_(GLNullId)
 {
 }
 
@@ -702,11 +732,11 @@ auto GLBufferBindPoint::bind(
   ) -> GLBufferBindPoint&
 {
   assert(!(offset < 0 || size < 0) && "offset/size negative passed to GLBufferBindPoint::bind()!");
-  assert(buffer.id() != GLNullObject && "attemmpted to bind() a null buffer!");
+  assert(buffer.id() != GLNullId && "attemmpted to bind() a null buffer!");
   assert(buffer.bindTarget() == target_ &&
       "attempted to bind() a buffer with an incompatible bindTarget() to a bind point!");
 
-  GLObject bufferid = buffer.id();
+  GLId bufferid = buffer.id();
   GLSize buffer_size = buffer.size();
 
   // Make sure all the arguments are valid...

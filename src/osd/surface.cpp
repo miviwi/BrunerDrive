@@ -8,9 +8,6 @@
 #include <gx/texture.h>
 #include <gx/buffer.h>
 
-// OpenGL/gl3w
-#include <GL/gl3w.h>
-
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -116,6 +113,8 @@ void OSDSurface::initCommonGLObjects()
   GLVertexFormat empty_vertex_format;
   empty_vertex_array_ = empty_vertex_format.newVertexArray();
 
+  empty_vertex_array_->label("a.OSD.Objects");
+
   surface_object_verts_ = nullptr;
   surface_object_inds_ = new GLIndexBuffer();
 
@@ -130,6 +129,8 @@ void OSDSurface::initCommonGLObjects()
 
   surface_object_inds_
     ->alloc(SurfaceIndexBufSize, GLBuffer::StaticRead, inds.data());
+
+  surface_object_inds_->label("bi.OSD.Objects");
 
   m_projection = osd_ortho(0.0f, 0.0f, (float)dimensions_.y, (float)dimensions_.x, 0.0f, 1.0f);
 }
@@ -174,14 +175,14 @@ void OSDSurface::initFontGLObjects()
   renderProgram(OSDDrawCall::DrawString)
     .uniformMat4x4("um4Projection", m_projection.data());
 
-  glObjectLabel(GL_TEXTURE, font_tex_->id(), -1, "OSDSurface::font_tex");
-  glObjectLabel(GL_SAMPLER, font_sampler_->id(), -1, "OSDSurface::font_sampler");
+  font_tex_->label("t2d.OSD.Font");
+  font_sampler_->label("s.OSD.Font");
 
-  glObjectLabel(GL_BUFFER, strings_buf_->id(), -1, "OSDSurface::strings_buf");
-  glObjectLabel(GL_TEXTURE, strings_tex_->id(), -1, "OSDSurface::strings_tex");
+  strings_buf_->label("bt.OSD.Strings");
+  strings_tex_->label("tb.OSD.Strings");
 
-  glObjectLabel(GL_BUFFER, string_attrs_buf_->id(), -1, "OSDSurface::string_attrs_buf");
-  glObjectLabel(GL_TEXTURE, string_attrs_tex_->id(), -1, "OSDSurface::string_attrs_tex");
+  string_attrs_buf_->label("bt.OSD.StringAttrs");
+  string_attrs_tex_->label("tb.OSD.StringAttrs");
 }
 
 void OSDSurface::destroyGLObjects()

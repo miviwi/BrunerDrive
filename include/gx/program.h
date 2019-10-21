@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gx/gx.h>
+#include <gx/object.h>
 
 #include <cassert>
 
@@ -18,7 +19,7 @@ namespace brdrive {
 // Forward declaration
 class GLTexImageUnit;
 
-class GLShader {
+class GLShader : public GLObject {
 public:
   enum Type {
     Invalid,
@@ -56,11 +57,10 @@ public:
   };
 
   GLShader(Type type);
-  GLShader(const GLShader&) = delete;
   GLShader(GLShader&& other);
-  ~GLShader();
+  virtual ~GLShader();
 
-  auto id() const -> GLObject;
+  auto operator=(GLShader&& other) -> GLShader&;
 
   // Prepends:
   //      #version <ver>
@@ -112,6 +112,11 @@ public:
 
   auto infoLog() const -> std::optional<std::string>;
 
+protected:
+  auto swap(GLShader& other) -> GLShader&;
+
+  virtual auto doDestroy() -> GLObject& final;
+
 private:
   enum StateFlags : u32 {
     VersionStateMask  = 0b00000011,
@@ -128,7 +133,6 @@ private:
   };
 
   GLEnum type_;
-  GLObject id_;
 
   bool compiled_;
 
@@ -152,7 +156,7 @@ private:
   std::vector<std::string_view> sources_;
 };
 
-class GLProgram {
+class GLProgram : public GLObject {
 public:
   using UniformLocation = int;
 
@@ -186,9 +190,10 @@ public:
   };
 
   GLProgram();
-  GLProgram(const GLProgram&) = delete;
   GLProgram(GLProgram&& other);
-  ~GLProgram();
+  virtual ~GLProgram();
+
+  auto operator=(GLProgram&& other) -> GLProgram&;
 
   auto attach(const GLShader& shader) -> GLProgram&;
   auto detach(const GLShader& shader) -> GLProgram&;
@@ -218,6 +223,11 @@ public:
 
   auto uniformMat4x4(const char *name, const float *mat) -> GLProgram&;
 
+protected:
+  auto swap(GLProgram& other) -> GLProgram&;
+
+  virtual auto doDestroy() -> GLObject& final;
+
 private:
   using UniformLocationType = std::tuple<UniformLocation, UniformType>;
 
@@ -237,7 +247,7 @@ private:
       UniformLocation location, Args&&... args
     ) -> GLProgram&
   {
-    assert(id_ != GLNullObject);
+    assert(id_ != GLNullId);
     assert(linked_ &&
       "attempted to upload a uniform to a GLProgram which hasn't been link()'ed!");
 
@@ -257,7 +267,6 @@ private:
     return *this;
   }
 
-  GLObject id_;
   bool linked_;
 
   // Lazy-initialized when uploading a uniform for the first time

@@ -12,7 +12,7 @@
 
 namespace brdrive {
 
-thread_local GLObject g_bound_program = GLNullObject;
+thread_local GLId g_bound_program = GLNullId;
 
 [[using gnu: always_inline]]
 constexpr auto Type_to_shaderType(GLShader::Type type) -> GLenum
@@ -50,8 +50,8 @@ static auto shaderType_supported(GLShader::Type type) -> bool
 }
 
 GLShader::GLShader(Type type) :
+  GLObject(GL_SHADER),
   type_(Type_to_shaderType(type)),
-  id_(GLNullObject),
   compiled_(false),
   sources_state_flags_(0),
   version_(DefaultGLSLVersion),
@@ -61,26 +61,37 @@ GLShader::GLShader(Type type) :
 }
 
 GLShader::GLShader(GLShader&& other) :
-  type_(other.type_)
+  GLObject(GL_SHADER),
+  type_(GL_INVALID_ENUM)
 {
-  std::swap(id_, other.id_);
+  other.swap(*this);
+}
+
+GLShader::~GLShader()
+{
+  GLShader::doDestroy();
+}
+
+auto GLShader::operator=(GLShader&& other) -> GLShader&
+{
+  destroy();
+  other.swap(*this);
+
+  return *this;
+}
+
+auto GLShader::swap(GLShader& other) -> GLShader&
+{
+  other.GLObject::swap(*this);
+  
+  std::swap(type_, other.type_);
   std::swap(compiled_, other.compiled_);
   std::swap(sources_state_flags_, other.sources_state_flags_);
   std::swap(version_, other.version_);
   std::swap(defines_, other.defines_);
   std::swap(sources_, other.sources_);
-}
 
-GLShader::~GLShader()
-{
-  if(id_ == GLNullObject) return;
-
-  glDeleteShader(id_);
-}
-
-auto GLShader::id() const -> GLObject
-{
-  return id_;
+  return *this;
 }
 
 auto GLShader::glslVersion(int ver) -> GLShader&
@@ -244,7 +255,7 @@ auto GLShader::compiled() const -> bool
 
 auto GLShader::infoLog() const -> std::optional<std::string>
 {
-  if(id_ == GLNullObject) return std::nullopt;
+  if(id_ == GLNullId) return std::nullopt;
 
   int info_log_length = -1;
   glGetShaderiv(id_, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -259,8 +270,17 @@ auto GLShader::infoLog() const -> std::optional<std::string>
   return std::move(info_log);
 }
 
+auto GLShader::doDestroy() -> GLObject&
+{
+  if(id_ == GLNullId) return *this;
+
+  glDeleteShader(id_);
+
+  return *this;
+}
+
 GLProgram::GLProgram() :
-  id_(GLNullObject),
+  GLObject(GL_PROGRAM),
   linked_(false)
 {
 }
@@ -268,25 +288,39 @@ GLProgram::GLProgram() :
 GLProgram::GLProgram(GLProgram&& other) :
   GLProgram()
 {
-  std::swap(id_, other.id_);
-  std::swap(linked_, other.linked_);
+  other.swap(*this);
 }
 
 GLProgram::~GLProgram()
 {
-  if(id_ == GLNullObject) return;
+  GLProgram::doDestroy();
+}
 
-  glDeleteProgram(id_);
+auto GLProgram::operator=(GLProgram&& other) -> GLProgram&
+{
+  destroy();
+  other.swap(*this);
+
+  return *this;
+}
+
+auto GLProgram::swap(GLProgram& other) -> GLProgram&
+{
+  other.GLObject::swap(*this);
+
+  std::swap(linked_, other.linked_);
+
+  return *this;
 }
 
 auto GLProgram::attach(const GLShader& shader) -> GLProgram&
 {
-  assert(shader.id() != GLNullObject && "attempted to attach() a null GLShader!");
+  assert(shader.id() != GLNullId && "attempted to attach() a null GLShader!");
   assert(shader.compiled() &&
       "attempted to attach() a GLShader which hadn't yet been compiled!");
 
   // Lazily allocate the program object
-  if(id_ == GLNullObject) id_ = glCreateProgram();
+  if(id_ == GLNullId) id_ = glCreateProgram();
 
   glAttachShader(id_, shader.id());
 
@@ -298,8 +332,8 @@ auto GLProgram::attach(const GLShader& shader) -> GLProgram&
 
 auto GLProgram::detach(const GLShader& shader) -> GLProgram&
 {
-  assert(id_ != GLNullObject);
-  assert(shader.id() != GLNullObject && "attempted to detach() a null GLShader!");
+  assert(id_ != GLNullId);
+  assert(shader.id() != GLNullId && "attempted to detach() a null GLShader!");
 
   glDetachShader(id_, shader.id());
 
@@ -311,7 +345,7 @@ auto GLProgram::detach(const GLShader& shader) -> GLProgram&
 
 auto GLProgram::link() -> GLProgram&
 {
-  assert(id_ != GLNullObject);
+  assert(id_ != GLNullId);
 
   glLinkProgram(id_);
 
@@ -333,7 +367,7 @@ auto GLProgram::linked() const -> bool
 
 auto GLProgram::infoLog() const -> std::optional<std::string>
 {
-  if(id_ == GLNullObject) return std::nullopt;
+  if(id_ == GLNullId) return std::nullopt;
 
   int info_log_length = -1;
   glGetProgramiv(id_, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -463,6 +497,15 @@ auto GLProgram::uniformLocationType(const char *name, UniformType type) -> Unifo
   if(type_ != type) throw UniformTypeError();
 
   return uniform_it->second;   // Return the map value
+}
+
+auto GLProgram::doDestroy() -> GLObject&
+{
+  if(id_ == GLNullId) return *this;
+
+  glDeleteProgram(id_);
+
+  return *this;
 }
 
 }

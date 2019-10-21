@@ -146,7 +146,7 @@ static constexpr auto GLType_to_type(GLType type) -> GLenum
 }
 
 GLTexture::GLTexture(GLEnum bind_target) :
-  id_(GLNullObject),
+  GLObject(GL_TEXTURE),
   dimensions_(bind_target_to_Dimensions(bind_target)),
   bind_target_(bind_target),
   width_(1), height_(1), depth_(1),
@@ -154,17 +154,37 @@ GLTexture::GLTexture(GLEnum bind_target) :
 {
 }
 
-GLTexture::~GLTexture()
+GLTexture::GLTexture(GLTexture&& other) :
+  GLTexture(GL_INVALID_ENUM)
 {
-  if(id_ == GLNullObject) return;
-
-  glDeleteTextures(1, &id_);
-  id_ = GLNullObject;   // So implicit operator=(GLTexture&&) works properly
+  other.swap(*this);
 }
 
-auto GLTexture::id() const -> GLObject
+GLTexture::~GLTexture()
 {
-  return id_;
+  GLTexture::doDestroy();
+}
+
+auto GLTexture::operator=(GLTexture&& other) -> GLTexture&
+{
+  destroy();
+  other.swap(*this);
+
+  return *this;
+}
+
+auto GLTexture::swap(GLTexture& other) -> GLTexture&
+{
+  other.GLObject::swap(*this);
+
+  std::swap(dimensions_, other.dimensions_);
+  std::swap(bind_target_, other.bind_target_);
+  std::swap(width_, other.width_);
+  std::swap(height_, other.height_);
+  std::swap(depth_, other.depth_);
+  std::swap(levels_, other.levels_);
+
+  return *this;
 }
 
 auto GLTexture::dimensions() const -> Dimensions
@@ -190,6 +210,16 @@ auto GLTexture::height() const -> unsigned
 auto GLTexture::depth() const -> unsigned
 {
   return depth_;
+}
+
+auto GLTexture::doDestroy() -> GLObject&
+{
+  if(id_ == GLNullId) return *this;
+
+  glDeleteTextures(1, &id_);
+  id_ = GLNullId;   // So implicit operator=(GLTexture&&) works properly
+
+  return *this;
 }
 
 GLTexture2D::GLTexture2D() :
@@ -234,7 +264,7 @@ auto GLTexture2D::alloc(
   width_ = width; height_ = height;
   levels_ = levels;
 
-  GLObject bound_texture = GLNullObject;
+  GLId bound_texture = GLNullId;
 
   auto gl_internalformat = GLFormat_to_internalformat(internalformat);
   if(gl_internalformat == GL_INVALID_ENUM) throw InvalidFormatTypeError();
@@ -275,7 +305,7 @@ auto GLTexture2D::upload(
   auto gl_format = GLFormat_to_format(format);
   auto gl_type   = GLType_to_type(type);
 
-  GLObject bound_texture = GLNullObject;
+  GLId bound_texture = GLNullId;
 
   if(gl_format == GL_INVALID_ENUM || gl_type == GL_INVALID_ENUM)
     throw InvalidFormatTypeError();
@@ -317,7 +347,7 @@ auto GLTextureBuffer::buffer(
     GLFormat internalformat_, const GLBuffer& buffer
   ) -> GLTextureBuffer&
 {
-  assert(buffer.id() != GLNullObject &&
+  assert(buffer.id() != GLNullId &&
       "attempted to attach a null buffer to a GLBufferTexture!");
 
   auto internalformat = GLFormat_to_internalformat(internalformat_);
@@ -422,34 +452,34 @@ auto params_requires_SymbolicValue(GLSampler::ParamName param) -> bool
 }
 
 GLSampler::GLSampler() :
-  id_(GLNullObject)
+  GLObject(GL_SAMPLER)
 {
 }
 
 GLSampler::GLSampler(GLSampler&& other) :
   GLSampler()
 {
-  std::swap(id_, other.id_);
+  other.swap(*this);
 }
 
 GLSampler::~GLSampler()
 {
-  if(id_ == GLNullObject) return;
-
-  glDeleteSamplers(1, &id_);
-  id_ = GLNullObject;   // So implicit operator=(GLSampler&&) works properly
+  GLSampler::doDestroy();
 }
 
-auto GLSampler::id() const -> GLObject
+auto GLSampler::operator=(GLSampler&& other) -> GLSampler&
 {
-  return id_;
+  destroy();
+  other.swap(*this);
+
+  return *this;
 }
 
 auto GLSampler::iParam(ParamName pname_, int value) -> GLSampler&
 {
   // Ensure the sampler has been initialized
   initGLObject();
-  assert(id_ != GLNullObject);
+  assert(id_ != GLNullId);
 
   auto pname = GLSamplerParamName_to_pname(pname_);
   if(pname == GL_INVALID_ENUM) throw InvalidParamNameError();
@@ -475,9 +505,19 @@ auto GLSampler::fParam(ParamName pname_, float value) -> GLSampler&
   return *this;
 }
 
+auto GLSampler::doDestroy() -> GLObject&
+{
+  if(id_ == GLNullId) return *this;
+
+  glDeleteSamplers(1, &id_);
+  id_ = GLNullId;   // So implicit operator=(GLSampler&&) works properly
+
+  return *this;
+}
+
 void GLSampler::initGLObject()
 {
-  if(id_ != GLNullObject) return;
+  if(id_ != GLNullId) return;
 
   glGenSamplers(1, &id_);
 }
@@ -485,13 +525,13 @@ void GLSampler::initGLObject()
 GLTexImageUnit::GLTexImageUnit(GLContext *context, unsigned slot) :
   context_(context),
   slot_(slot),
-  bound_texture_(GLNullObject), bound_sampler_(GLNullObject)
+  bound_texture_(GLNullId), bound_sampler_(GLNullId)
 {
 }
 
 auto GLTexImageUnit::bind(const GLTexture& tex) -> GLTexImageUnit&
 {
-  assert(tex.id() != GLNullObject && "attempted to bind() a null texture to a GLTexImageUnit!");
+  assert(tex.id() != GLNullId && "attempted to bind() a null texture to a GLTexImageUnit!");
 
   auto tex_id = tex.id();
 
@@ -517,7 +557,7 @@ auto GLTexImageUnit::bind(const GLTexture& tex) -> GLTexImageUnit&
 
 auto GLTexImageUnit::bind(const GLSampler& sampler) -> GLTexImageUnit&
 {
-  assert(sampler.id() != GLNullObject &&
+  assert(sampler.id() != GLNullId &&
       "attempted to bind() a null sampler to a GLTexImageUnit!");
 
   auto sampler_id = sampler.id();
@@ -543,7 +583,7 @@ auto GLTexImageUnit::texImageUnitIndex() const -> unsigned
   return slot_;
 }
 
-auto GLTexImageUnit::boundTexture() const -> GLObject
+auto GLTexImageUnit::boundTexture() const -> GLId
 {
   return bound_texture_;
 }

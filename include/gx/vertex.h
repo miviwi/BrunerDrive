@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gx/gx.h>
+#include <gx/object.h>
 
 #include <exception>
 #include <stdexcept>
@@ -51,7 +52,7 @@ struct GLVertexFormatAttr {
 };
 
 struct GLVertexFormatBuffer {
-  GLObject bufferid = GLNullObject;
+  GLId bufferid = GLNullId;
 
   GLSize stride, offset;
 };
@@ -305,7 +306,7 @@ private:
   int dbg_forced_va_create_path_;
 };
 
-class GLVertexArray {
+class GLVertexArray : public GLObject {
 public:
   struct VertexAttribBindingUnsupportedError : public std::runtime_error {
     VertexAttribBindingUnsupportedError() :
@@ -313,13 +314,10 @@ public:
     { }
   };
 
-  GLVertexArray(const GLVertexArray&) = delete;
   GLVertexArray(GLVertexArray&& other);
-  ~GLVertexArray();
+  virtual ~GLVertexArray();
 
   auto operator=(GLVertexArray&& other) -> GLVertexArray&;
-
-  auto id() const -> GLObject;
 
   // TODO: this should be done in GLVertexFormat::createVertexArray(),
   //       not only for transparency of system detail to users of this
@@ -338,6 +336,9 @@ public:
 
   auto unbind() -> GLVertexArray&;
 
+protected:
+  virtual auto doDestroy() -> GLObject& final;
+
 private:
   friend GLVertexFormat;
 
@@ -347,8 +348,6 @@ private:
   //  - On older machines the old-style glVertexAttribPointer()
   //    family of functions will be used
   GLVertexArray();
-
-  GLObject id_;
 };
 
 // Private classes, enums, functions, variables etc.

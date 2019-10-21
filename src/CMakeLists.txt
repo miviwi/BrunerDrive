@@ -11,6 +11,7 @@ target_sources (BrunerDrive PRIVATE
   ${SrcDir}/gx/gx.cpp
   ${SrcDir}/gx/context.cpp
   ${SrcDir}/gx/extensions.cpp
+  ${SrcDir}/gx/object.cpp
   ${SrcDir}/gx/pipeline.cpp
   ${SrcDir}/gx/vertex.cpp
   ${SrcDir}/gx/buffer.cpp

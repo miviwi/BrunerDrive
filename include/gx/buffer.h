@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gx/gx.h>
+#include <gx/object.h>
 
 #include <exception>
 #include <stdexcept>
@@ -14,7 +15,7 @@ class GLBufferMapping;
 class GLVertexArray;
 class GLTexture;
 
-class GLBuffer {
+class GLBuffer : public GLObject {
 public:
   // The values are created such that
   //     Usage: 0b0000'ffaa
@@ -129,9 +130,10 @@ public:
     { }
   };
 
-  GLBuffer(const GLBuffer&) = delete;
-  GLBuffer(GLBuffer&&) = delete;
+  GLBuffer(GLBuffer&& other);
   virtual ~GLBuffer();
+
+  auto operator=(GLBuffer&& other) -> GLBuffer&;
 
   // Allocate the GL object for the buffer and it's backing memory
   //   - MUST be called before any other method ex. map(), upload() etc.
@@ -157,7 +159,6 @@ public:
   //   call ism't needed
   auto unmap() -> GLBuffer&;
 
-  auto id() const -> GLObject;
   auto bindTarget() const -> GLEnum;
   auto size() const -> GLSize;
 
@@ -178,6 +179,10 @@ semi-private:
 protected:
   GLBuffer(GLEnum bind_target);
 
+  auto swap(GLBuffer& other) -> GLBuffer&;
+
+  virtual auto doDestroy() -> GLBuffer& final;
+
   // Binds this buffer to the context
   void bindSelf();
   // Binds 0 to bind_tagret_ (which,
@@ -185,7 +190,6 @@ protected:
   //   from said target)
   void unbindSelf(); 
 
-  GLObject id_;
   GLEnum bind_target_;
 
   GLSize size_;
@@ -473,7 +477,7 @@ private:
   GLEnum target_;
   unsigned index_;
 
-  GLObject bound_buffer_;
+  GLId bound_buffer_;
 };
 
 }

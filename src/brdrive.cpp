@@ -98,6 +98,8 @@ int main(int argc, char *argv[])
 
   printf("OpenGL %s\n\n", gl_context.versionString().data());
 
+  gl_context.dbg_PushCallGroup("Compute");
+
   GLProgram compute_shader_program;
 
   GLShader compute_shader_program_shader(GLShader::Compute);
@@ -137,6 +139,8 @@ void main()
     return -2;
   }
 
+  compute_shader_program_shader.label("p.ComputeCS");
+
    compute_shader_program
      .attach(compute_shader_program_shader);
 
@@ -153,7 +157,11 @@ void main()
   compute_output_tex
     .alloc(4096, 1, 1, rgba8);
 
+  compute_output_tex.label("t2d.ComputeOutput");
+
   glBindImageTexture(0, compute_output_tex.id(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8);
+
+  compute_shader_program.label("p.Compute");
 
   compute_shader_program
     .uniform("uiComputeOut", gl_context.texImageUnit(0))
@@ -175,7 +183,12 @@ void main()
   GLFence compute_fence;
   compute_fence
     .fence()
+    .label("f.Compute")
     .block();
+
+  gl_context
+    .dbg_PopCallGroup()
+    .dbg_PushCallGroup("OSD");
 
   glDisable(GL_DEPTH_TEST);
 
@@ -183,25 +196,6 @@ void main()
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
   glClearColor(1.0f, 1.0f, 0.0f, 0.5f);
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  const char topaz_test_string[] = "hello, world!ASDF1234567890";
-  GLBufferTexture string_buf_tex;
-  string_buf_tex
-    .alloc(
-        sizeof(topaz_test_string), GLBuffer::DynamicRead, GLBuffer::MapWrite|GLBuffer::ClientStorage
-    );
-  {
-    auto string_buf_tex_mapping = string_buf_tex.map(
-        GLBuffer::MapWrite|GLBuffer::MapFlushExplicit
-    );
-
-    memcpy(string_buf_tex_mapping.get(), topaz_test_string, sizeof(topaz_test_string));
-  }
-
-  GLTextureBuffer string_tex_buf;
-  string_tex_buf
-    .buffer(r8i, string_buf_tex);
 
   auto topaz_1bpp = load_font("Topaz.raw");
   if(!topaz_1bpp) {
@@ -215,75 +209,8 @@ void main()
 
   auto c = x11().connection<xcb_connection_t>();
 
-  auto topaz_tex_pixel_buf = GLPixelBuffer(GLPixelBuffer::Upload);
-
-  topaz_tex_pixel_buf
-    .alloc(topaz.pixelDataSize(), GLBuffer::StaticRead, topaz.pixelData());
-
-  GLTexture2D topaz_tex;
-
-  topaz_tex
-    .alloc(8, 4096, 1, r8);
-
-  topaz_tex_pixel_buf
-    .uploadTexture(topaz_tex, 0, r, GLType::u8);
-
-  GLFence topaz_tex_uploaded;
-  topaz_tex_uploaded
-    .fence()
-    .sync();
-
-  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
-
-  GLSampler topaz_tex_sampler;
-  topaz_tex_sampler
-    .iParam(GLSampler::WrapS, GLSampler::Repeat)
-    .iParam(GLSampler::WrapT, GLSampler::Repeat)
-    .iParam(GLSampler::MinFilter, GLSampler::Nearset)
-    .iParam(GLSampler::MagFilter, GLSampler::Nearset);
-
-  u16 string_vert_indices[14*5];
-  for(size_t i = 0; i < sizeof(string_vert_indices)/sizeof(u16); i++) {
-    u16 idx = (i % 5) < 4 ? (i % 5)+(i/5)*4 : 0xFFFF;
-
-    string_vert_indices[i] = idx;
-  }
-
-  GLIndexBuffer text_index_buf;
-  text_index_buf
-    .alloc(sizeof(string_vert_indices), GLBuffer::DynamicDraw, string_vert_indices);
-
   glEnable(GL_PRIMITIVE_RESTART);
   glPrimitiveRestartIndex(0xFFFF);
-
-  GLVertexFormat string_vertex_format;
-
-  const i16 StringXYOffsetsLengths[2 /* num strings */ * 4 /* num componnets R,G,B,A */] = {
-      10, 10, 0, 13,
-      256, 50, 13, 14,
-  };
-
-  GLVertexBuffer string_per_instance_data_buf;
-  string_per_instance_data_buf
-    .alloc(sizeof(StringXYOffsetsLengths), GLBuffer::DynamicDraw, GLBuffer::MapWrite);
-
-  if(auto string_data_buf_mapping = string_per_instance_data_buf.map(GLBuffer::MapWrite)) {
-    memcpy(string_data_buf_mapping.get(), StringXYOffsetsLengths, sizeof(StringXYOffsetsLengths));
-  }
-
-  string_vertex_format
-    .iattr(0, 4, GLType::i16, GLVertexFormatAttr::PerInstance);
-
-  printf("string_vertex_format.vertexByteSize()=%d\n", string_vertex_format.vertexByteSize());
-  printf("string_vertex_format.instanceByteSize()=%d\n\n", string_vertex_format.instanceByteSize());
-
-  auto vertex_array = string_vertex_format
-    .bindVertexBuffer(0, string_per_instance_data_buf)
-    .createVertexArray();
-
-  topaz_tex_uploaded
-    .block(1);
-  printf("topaz_tex_pixel_buf.signaled=%d\n\n", topaz_tex_uploaded.signaled());
 
   OSDSurface some_surface;
   some_surface
@@ -312,15 +239,6 @@ void main()
           code, code, code, sym, sym, sym);
 
       if(sym == 'q') running = false;
-
-      if(sym == 'c' || change) {
-        const char new_text[] = "hello - again!!";
-
-        auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
-
-        memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
-        change = false;
-      }
 
       if(sym == 'f') use_fence = !use_fence;
       break;
@@ -352,14 +270,7 @@ void main()
       break;
     }
 
-    if(change) {
-      const char new_text[] = "hello - again!!";
-
-      auto string_buf_tex_mapping = string_buf_tex.map(GLBuffer::MapWrite);
-
-      memcpy(string_buf_tex_mapping.get(), new_text, sizeof(new_text));
-      change = false;
-    }
+    gl_context.dbg_PushCallGroup("OSD.some_surface");
 
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -396,8 +307,12 @@ void main()
           std::chrono::duration_cast<std::chrono::microseconds>(end-start).count());
     }
 
+    gl_context.dbg_PopCallGroup();
+
     if(!running) break;
   }
+
+glPopDebugGroup();
 
   gl_context
     .destroy();

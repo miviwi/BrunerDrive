@@ -245,9 +245,14 @@ void main()
   try_compile_shader(vert);
   try_compile_shader(frag);
 
+  vert.label("p.OSD.DrawStringVS");
+  frag.label("p.OSD.DrawStringFS");
+
   gl_program
     .attach(vert)
     .attach(frag);
+
+  gl_program.label("p.OSD.DrawString");
 
   // Analogous to try_compile_shader()
   try {

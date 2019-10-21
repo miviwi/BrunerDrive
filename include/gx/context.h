@@ -91,6 +91,9 @@ public:
   // Can only be called AFTER gx_init()!
   auto dbg_EnableMessages() -> GLContext&;
 
+  auto dbg_PushCallGroup(const char *name) -> GLContext&;
+  auto dbg_PopCallGroup() -> GLContext&;
+
   auto versionString() -> std::string;
   auto version() -> GLVersion;
 
@@ -104,11 +107,12 @@ private:
   friend GLTexImageUnit;
   friend GLBufferBindPoint;
 
-
   GLTexImageUnit *tex_image_units_;        //   Array
   unsigned active_texture_;
 
   GLBufferBindPoint *buffer_bind_points_;  // ---||---
+
+  unsigned dbg_group_id_;
 };
 
 }
