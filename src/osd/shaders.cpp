@@ -7,16 +7,7 @@
 
 namespace brdrive::osd_detail {
 
-auto init_DrawString_program() -> GLProgram*
-{
-  auto gl_program_ptr = new GLProgram();
-  auto& gl_program = *gl_program_ptr;
-
-  GLShader vert(GLShader::Vertex);
-  GLShader frag(GLShader::Fragment);
-
-  vert
-    .source(R"VERT(
+static const char *s_osd_vs_src = R"VERT(
 #if defined(USE_INSTANCE_ATTRIBUTES)
 layout(location = 0) in ivec4 viStringXYOffsetLength;
 layout(location = 1) in vec4 viStringColorRGBX;
@@ -24,44 +15,24 @@ layout(location = 1) in vec4 viStringColorRGBX;
 
 out Vertex {
   vec3 Position;
-  vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
   float Character;
 } vo;
 
-//const float FontSize = 1.0f/8.0f;
-
 // The positions of a single glyph's vertices
 //   at the screen's top-left corner
-#if 0
-const vec4 PositionsOffsetVector = vec4(vec2(0.5f*FontSize, 1.0f-FontSize), 0.0f, 0.0f);
-const vec4 Positions[4] = vec4[](
-  vec4(-1.0f, 1.0f, 0.0f, 1.0f),
-  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.wyww,
-  vec4(-1.0f, 0.0f, 0.0f, 1.0f) + PositionsOffsetVector.xyww,
-  vec4(-1.0f, 1.0f, 0.0f, 1.0f) + PositionsOffsetVector.xwww
-);
-#endif
-const vec4 Positions[4] = vec4[](
+const vec4 GlyphVertPositions[4] = vec4[](
   vec4(0.0f,  0.0f, 0.0f, 1.0f),
   vec4(0.0f, 16.0f, 0.0f, 1.0f),
   vec4(8.0f, 16.0f, 0.0f, 1.0f),
   vec4(8.0f,  0.0f, 0.0f, 1.0f)
 );
 
-// Positions of a full-screen quad's vertices
-const vec4 ScreenPositions[4] = vec4[](
-  vec4(-1.0f, +1.0f, 0.1f, 1.0f),
-  vec4(-1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, -1.0f, 0.1f, 1.0f),
-  vec4(+1.0f, +1.0f, 0.1f, 1.0f)
-);
-
 // UV coordinates which encompass
 //   a single character in 'usFont'
 const vec2 UVs[4] = vec2[](
-  vec2(0.0f, 0.0f/256.0f),
+  vec2(0.0f, 0.0f/256.0f /* <usFont height>/<glyph height> -> 4096/16 -> 256 */),
   vec2(0.0f, 1.0f/256.0f),
   vec2(1.0f, 1.0f/256.0f),
   vec2(1.0f, 0.0f/256.0f)
@@ -97,7 +68,7 @@ uniform int uiStringAttributesBaseOffset;
 
 // Fetch the string's properties from a texture, that is:
 //   * position (expressed in pixels with 0,0 at the top left corner)
-//   * the offset in the usStrings texture at which the sitring's
+//   * the offset in the usStrings texture at which the string's
 //     characters can be found
 //   * the string's length
 //   * the string's color (which could be packed better, but for now
@@ -160,14 +131,12 @@ void main()
   vec2 glyph_advance = vec2(float(string_character_num) * 8.0f, 0.0f);
 
   // Compute the needed output data...
-  vec4 pos = Positions[vert_id];
+  vec4 pos = GlyphVertPositions[vert_id];
   vec2 uv = UVs[vert_id] - vec2(0.0f, char_t_offset);
   vec4 projected_pos = um4Projection * (pos + vec4(attrs.position + glyph_advance, 0.0f, 0.0f));
-  vec4 screen_pos = ScreenPositions[vert_id];
 
   // ...and assign it
   vo.Position = projected_pos.xyz;
-  vo.ScreenPosition = screen_pos.xyz;
   vo.Color = attrs.color;
   vo.UV = uv;
   vo.Character = character;
@@ -176,14 +145,11 @@ void main()
   //   and posiiton in the string being rendered
   gl_Position = projected_pos;
 }
-)VERT")
-  ;
+)VERT";
 
-  frag
-    .source(R"FRAG(
+static const char *s_osd_fs_src = R"FRAG(
 in Vertex {
   vec3 Position;
-  vec3 ScreenPosition;
   vec3 Color;
   vec2 UV;
   float Character;
@@ -226,7 +192,21 @@ void main()
   foFragColor = vec4(glyph_color, alpha);
 #endif
 }
-)FRAG");
+)FRAG";
+
+auto init_DrawString_program() -> GLProgram*
+{
+  auto gl_program_ptr = new GLProgram();
+  auto& gl_program = *gl_program_ptr;
+
+  GLShader vert(GLShader::Vertex);
+  GLShader frag(GLShader::Fragment);
+
+  vert
+    .source(s_osd_vs_src);
+
+  frag
+    .source(s_osd_fs_src);
 
   auto try_compile_shader = [](GLShader& shader)
   {
